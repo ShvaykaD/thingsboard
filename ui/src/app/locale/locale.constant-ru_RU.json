@@ -1405,7 +1405,7 @@
     "queue": {
         "select_name": "Выберите имя для Queue",
         "name": "Имя для Queue",
-        "name_required": "Поле \"Имя для Queue\" обязательно к заполнению!"
+        "name_required": "Поле 'Имя для Queue' обязательно к заполнению!"
 
     },
     "tenant": {
