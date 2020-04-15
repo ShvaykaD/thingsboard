@@ -33,13 +33,11 @@ export default function QueueTypeList($compile, $templateCache, $q, $filter, que
         scope.tbRequired = angular.isDefined(scope.tbRequired) ? scope.tbRequired : false;
         scope.queueSearchText = '';
 
-        loadQueues();
-
         scope.fetchQueues = function(searchText) {
             var deferred = $q.defer();
             loadQueues().then(
-                function success() {
-                    let result = $filter('filter')(scope.queues, {'$': searchText});
+                function success(queueArr) {
+                    let result = $filter('filter')(queueArr, {'$': searchText});
                     if (result && result.length) {
                         if (searchText && searchText.length && result.indexOf(searchText) === -1) {
                             result.push(searchText);
