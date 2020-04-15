@@ -87,6 +87,7 @@ export default angular.module('thingsboard.home', [
     thingsboardWidgetLibrary,
     thingsboardDashboard,
     thingsboardRuleChain,
+    thingsboardQueue,
     thingsboardJsonForm,
     thingsboardApiDevice,
     thingsboardApiLogin,
@@ -101,8 +102,7 @@ export default angular.module('thingsboard.home', [
     thingsboardGatewayConfigSelect,
     thingsboardGatewayForm,
     thingsboardJsonObjectEdit,
-    thingsboardJsonContent,
-    thingsboardQueue
+    thingsboardJsonContent
 ])
     .config(HomeRoutes)
     .controller('HomeController', HomeController)
