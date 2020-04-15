@@ -37,37 +37,6 @@ export default function QueueTypeList($compile, $templateCache, $q, $filter, que
 
         scope.fetchQueues = function(searchText) {
             var deferred = $q.defer();
-            // if(!scope.queues) {
-            //     queueService.getTenantQueuesByServiceType(scope.queueType).then(
-            //         function success(queuesArr) {
-            //             scope.queues = queuesArr.data;
-            //             let result = $filter('filter')(scope.queues, {'$': searchText});
-            //             if (result && result.length) {
-            //                 if (searchText && searchText.length && result.indexOf(searchText) === -1) {
-            //                     result.push(searchText);
-            //                 }
-            //                 result.sort();
-            //                 deferred.resolve(result);
-            //             } else {
-            //                 deferred.resolve([searchText]);
-            //             }
-            //         },
-            //         function fail() {
-            //             deferred.reject();
-            //         }
-            //     );
-            // } else {
-            //     let result = $filter('filter')(scope.queues, {'$': searchText});
-            //     if (result && result.length) {
-            //         if (searchText && searchText.length && result.indexOf(searchText) === -1) {
-            //             result.push(searchText);
-            //         }
-            //         result.sort();
-            //         return result;
-            //     } else {
-            //         return [searchText];
-            //     }
-            // }
             loadQueues().then(
                 function success() {
                     let result = $filter('filter')(scope.queues, {'$': searchText});
