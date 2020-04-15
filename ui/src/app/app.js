@@ -87,7 +87,6 @@ import thingsboardHelp from './help/help.directive';
 import thingsboardToast from './services/toast';
 import thingsboardClipboard from './services/clipboard.service';
 import thingsboardHome from './layout';
-import thingsboardQueue from './components/queue';
 import thingsboardApiLogin from './api/login.service';
 import thingsboardApiDevice from './api/device.service';
 import thingsboardApiEntityView from './api/entity-view.service';
@@ -146,7 +145,6 @@ angular.module('thingsboard', [
     thingsboardToast,
     thingsboardClipboard,
     thingsboardHome,
-    thingsboardQueue,
     thingsboardApiLogin,
     thingsboardApiDevice,
     thingsboardApiEntityView,
