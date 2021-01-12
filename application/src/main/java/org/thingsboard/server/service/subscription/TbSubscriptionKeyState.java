@@ -13,13 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.thingsboard.server.common.data.query;
+package org.thingsboard.server.service.subscription;
 
 import lombok.Data;
+import org.thingsboard.server.common.data.query.EntityKeyType;
 
 @Data
-public class EntityKey {
-    private final EntityKeyType type;
-    private final String key;
-    private final boolean dataConvertion;
+public class TbSubscriptionKeyState {
+
+    private long lastUpdatedTs;
+    private EntityKeyType entityKeyType;
+    private boolean dataConversion;
+
+    public TbSubscriptionKeyState(long lastUpdatedTs, EntityKeyType entityKeyType, boolean dataConversion) {
+        this.lastUpdatedTs = lastUpdatedTs;
+        this.entityKeyType = entityKeyType;
+        this.dataConversion = dataConversion;
+    }
 }

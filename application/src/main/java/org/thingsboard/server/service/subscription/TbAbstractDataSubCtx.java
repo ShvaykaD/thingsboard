@@ -1,12 +1,12 @@
 /**
  * Copyright © 2016-2020 The Thingsboard Authors
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -52,7 +52,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -140,9 +139,10 @@ public abstract class TbAbstractDataSubCtx<T extends AbstractDataQuery<? extends
                 tmpSubMap.computeIfAbsent(sub.getEntityId(), tmp -> new HashMap<>()).put(sub.getKey().getSourceAttribute(), sub);
             }
             for (EntityId entityId : tmpSubMap.keySet()) {
-                Map<String, Long> keyStates = new HashMap<>();
+                Map<String, TbSubscriptionKeyState> keyStates = new HashMap<>();
                 Map<String, DynamicValueKeySub> dynamicValueKeySubMap = tmpSubMap.get(entityId);
-                dynamicValueKeySubMap.forEach((k, v) -> keyStates.put(k, v.getLastUpdateTs()));
+                dynamicValueKeySubMap.forEach((k, v) -> keyStates.put(k,
+                        new TbSubscriptionKeyState(v.getLastUpdateTs(), EntityKeyType.SERVER_ATTRIBUTE, true)));
                 int subIdx = sessionRef.getSessionSubIdSeq().incrementAndGet();
                 TbAttributeSubscription sub = TbAttributeSubscription.builder()
                         .serviceId(serviceId)
@@ -214,7 +214,7 @@ public abstract class TbAbstractDataSubCtx<T extends AbstractDataQuery<? extends
         } else {
             oldDataMap = Collections.emptyMap();
         }
-        Map<EntityId, EntityData> newDataMap = newData.getData().stream().collect(Collectors.toMap(EntityData::getEntityId, Function.identity(), (a,b)-> a));
+        Map<EntityId, EntityData> newDataMap = newData.getData().stream().collect(Collectors.toMap(EntityData::getEntityId, Function.identity(), (a, b) -> a));
         if (oldDataMap.size() == newDataMap.size() && oldDataMap.keySet().equals(newDataMap.keySet())) {
             log.trace("[{}][{}] No updates to entity data found", sessionRef.getSessionId(), cmdId);
         } else {
@@ -399,8 +399,8 @@ public abstract class TbAbstractDataSubCtx<T extends AbstractDataQuery<? extends
     }
 
     private TbSubscription createAttrSub(EntityData entityData, int subIdx, EntityKeyType keysType, TbAttributeSubscriptionScope scope, List<EntityKey> subKeys) {
-        Map<String, Long> keyStates = buildKeyStats(entityData, keysType, subKeys);
-        log.trace("[{}][{}][{}] Creating attributes subscription for [{}] with keys: {}", serviceId, cmdId, subIdx, entityData.getEntityId(), keyStates);
+        Map<String, TbSubscriptionKeyState> keyStates = buildKeyStats(entityData, keysType, subKeys);
+        log.warn("[{}][{}][{}] Creating attributes subscription for [{}] with keys: {}", serviceId, cmdId, subIdx, entityData.getEntityId(), keyStates);
         return TbAttributeSubscription.builder()
                 .serviceId(serviceId)
                 .sessionId(sessionRef.getSessionId())
@@ -415,12 +415,17 @@ public abstract class TbAbstractDataSubCtx<T extends AbstractDataQuery<? extends
     }
 
     private TbSubscription createTsSub(EntityData entityData, int subIdx, List<EntityKey> subKeys, boolean resultToLatestValues) {
-        Map<String, Long> keyStates = buildKeyStats(entityData, EntityKeyType.TIME_SERIES, subKeys);
+        Map<String, TbSubscriptionKeyState> keyStates = buildKeyStats(entityData, EntityKeyType.TIME_SERIES, subKeys);
         if (entityData.getTimeseries() != null) {
             entityData.getTimeseries().forEach((k, v) -> {
+                Optional<EntityKey> subKey = subKeys.stream().filter(entityKey -> entityKey.getKey().equals(k)).findFirst();
                 long ts = Arrays.stream(v).map(TsValue::getTs).max(Long::compareTo).orElse(0L);
                 log.trace("[{}][{}] Updating key: {} with ts: {}", serviceId, cmdId, k, ts);
-                keyStates.put(k, ts);
+                if (subKey.isPresent()) {
+                    keyStates.put(k, new TbSubscriptionKeyState(ts, subKey.get().getType(), subKey.get().isDataConvertion()));
+                } else {
+                    keyStates.put(k, new TbSubscriptionKeyState(ts, EntityKeyType.TIME_SERIES, true));
+                }
             });
         }
         log.trace("[{}][{}][{}] Creating time-series subscription for [{}] with keys: {}", serviceId, cmdId, subIdx, entityData.getEntityId(), keyStates);
@@ -440,15 +445,20 @@ public abstract class TbAbstractDataSubCtx<T extends AbstractDataQuery<? extends
         sendWsMsg(sessionId, subscriptionUpdate, keyType, true);
     }
 
-    private Map<String, Long> buildKeyStats(EntityData entityData, EntityKeyType keysType, List<EntityKey> subKeys) {
-        Map<String, Long> keyStates = new HashMap<>();
-        subKeys.forEach(key -> keyStates.put(key.getKey(), 0L));
+    private Map<String, TbSubscriptionKeyState> buildKeyStats(EntityData entityData, EntityKeyType keysType, List<EntityKey> subKeys) {
+        Map<String, TbSubscriptionKeyState> keyStates = new HashMap<>();
+        subKeys.forEach(key -> keyStates.put(key.getKey(), new TbSubscriptionKeyState(0L, key.getType(), key.isDataConvertion())));
         if (entityData.getLatest() != null) {
             Map<String, TsValue> currentValues = entityData.getLatest().get(keysType);
             if (currentValues != null) {
                 currentValues.forEach((k, v) -> {
                     log.trace("[{}][{}] Updating key: {} with ts: {}", serviceId, cmdId, k, v.getTs());
-                    keyStates.put(k, v.getTs());
+                    Optional<EntityKey> subKey = subKeys.stream().filter(entityKey -> entityKey.getKey().equals(k)).findFirst();
+                    if (subKey.isPresent()) {
+                        keyStates.put(k, new TbSubscriptionKeyState(v.getTs(), subKey.get().getType(), subKey.get().isDataConvertion()));
+                    } else {
+                        keyStates.put(k, new TbSubscriptionKeyState(v.getTs(), keysType, true));
+                    }
                 });
             }
         }

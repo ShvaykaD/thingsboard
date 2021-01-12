@@ -32,6 +32,7 @@ import org.thingsboard.server.common.data.kv.AttributeKvEntry;
 import org.thingsboard.server.common.data.kv.BaseAttributeKvEntry;
 import org.thingsboard.server.common.data.kv.BasicTsKvEntry;
 import org.thingsboard.server.common.data.kv.LongDataEntry;
+import org.thingsboard.server.common.data.kv.StringDataEntry;
 import org.thingsboard.server.common.data.kv.TsKvEntry;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.query.DeviceTypeFilter;
@@ -648,6 +649,62 @@ public class BaseWebsocketApiTest extends AbstractWebsocketTest {
         attrValue = eData.get(0).getLatest().get(EntityKeyType.ATTRIBUTE).get("anyAttributeKey");
         Assert.assertEquals(new TsValue(dataPoint5.getLastUpdateTs(), dataPoint5.getValueAsString()), attrValue);
     }
+
+//    @Test
+//    public void testEntityDataLatestAttrTypesWsCmdWithRestrictConversion() throws Exception {
+//        Device device = new Device();
+//        device.setName("Device");
+//        device.setType("default");
+//        device.setLabel("testLabel" + (int) (Math.random() * 1000));
+//        device = doPost("/api/device", device, Device.class);
+//
+//        long now = System.currentTimeMillis();
+//
+//        DeviceTypeFilter dtf = new DeviceTypeFilter();
+//        dtf.setDeviceNameFilter("D");
+//        dtf.setDeviceType("default");
+//
+//        AttributeKvEntry dataPoint = new BaseAttributeKvEntry(now, new StringDataEntry("anyAttributeKey", "12345678912345678912"));
+//        sendAttributes(device, TbAttributeSubscriptionScope.SERVER_SCOPE, Arrays.asList(dataPoint));
+//
+//        EntityDataQuery edq = new EntityDataQuery(dtf, new EntityDataPageLink(1, 0, null, null),
+//                Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
+//
+//        LatestValueCmd latestCmd = new LatestValueCmd();
+//        List<EntityKey> keys = Collections.singletonList(new EntityKey(EntityKeyType.ATTRIBUTE, "anyAttributeKey", false));
+//        latestCmd.setKeys(keys);
+//        EntityDataCmd cmd = new EntityDataCmd(1, edq, null, latestCmd, null);
+//
+//        TelemetryPluginCmdsWrapper wrapper = new TelemetryPluginCmdsWrapper();
+//        wrapper.setEntityDataCmds(Collections.singletonList(cmd));
+//
+//        wsClient.send(mapper.writeValueAsString(wrapper));
+//        String msg = wsClient.waitForReply();
+//        EntityDataUpdate update = mapper.readValue(msg, EntityDataUpdate.class);
+//        Assert.assertEquals(1, update.getCmdId());
+//        PageData<EntityData> pageData = update.getData();
+//        Assert.assertNotNull(pageData);
+//        Assert.assertEquals(1, pageData.getData().size());
+//        Assert.assertEquals(device.getId(), pageData.getData().get(0).getEntityId());
+//        Assert.assertNotNull(pageData.getData().get(0).getLatest().get(EntityKeyType.ATTRIBUTE).get("anyAttributeKey"));
+//        Assert.assertEquals(now, pageData.getData().get(0).getLatest().get(EntityKeyType.ATTRIBUTE).get("anyAttributeKey").getTs());
+//        Assert.assertEquals("1.234567891234568E19", pageData.getData().get(0).getLatest().get(EntityKeyType.ATTRIBUTE).get("anyAttributeKey").getValue());
+//
+//        wsClient.registerWaitForUpdate();
+//        AttributeKvEntry dataPoint2 = new BaseAttributeKvEntry(now, new StringDataEntry("anyAttributeKey", "12345678912345678921"));
+//        sendAttributes(device, TbAttributeSubscriptionScope.SERVER_SCOPE, Arrays.asList(dataPoint2));
+//        msg = wsClient.waitForUpdate(TimeUnit.SECONDS.toMillis(1));
+//        update = mapper.readValue(msg, EntityDataUpdate.class);
+//        Assert.assertEquals(1, update.getCmdId());
+//        List<EntityData> updateData = update.getUpdate();
+//        Assert.assertNotNull(updateData);
+//        Assert.assertEquals(1, updateData.size());
+//        Assert.assertEquals(device.getId(), updateData.get(0).getEntityId());
+//        Assert.assertNotNull(updateData.get(0).getLatest().get(EntityKeyType.ATTRIBUTE));
+//        TsValue attrValue = updateData.get(0).getLatest().get(EntityKeyType.ATTRIBUTE).get("anyAttributeKey");
+//        Assert.assertEquals(new TsValue(dataPoint2.getLastUpdateTs(), dataPoint2.getValueAsString()), attrValue);
+//    }
+
 
     private void sendTelemetry(Device device, List<TsKvEntry> tsData) throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
