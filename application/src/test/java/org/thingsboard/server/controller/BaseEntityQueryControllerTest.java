@@ -16,16 +16,10 @@
 package org.thingsboard.server.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import org.apache.http.conn.ssl.TrustStrategy;
-import org.apache.http.ssl.SSLContextBuilder;
-import org.apache.http.ssl.SSLContexts;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-import org.springframework.boot.web.server.LocalServerPort;
 import org.thingsboard.server.common.data.DataConstants;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.EntityType;
@@ -33,7 +27,6 @@ import org.thingsboard.server.common.data.Tenant;
 import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.EntityId;
-import org.thingsboard.server.common.data.kv.Aggregation;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.query.DeviceTypeFilter;
 import org.thingsboard.server.common.data.query.EntityCountQuery;
@@ -48,16 +41,10 @@ import org.thingsboard.server.common.data.query.FilterPredicateValue;
 import org.thingsboard.server.common.data.query.KeyFilter;
 import org.thingsboard.server.common.data.query.NumericFilterPredicate;
 import org.thingsboard.server.common.data.security.Authority;
-import org.thingsboard.server.service.telemetry.cmd.v2.EntityDataCmd;
-import org.thingsboard.server.service.telemetry.cmd.v2.EntityHistoryCmd;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 import java.util.stream.Collectors;
 
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -151,10 +138,10 @@ public abstract class BaseEntityQueryControllerTest extends AbstractControllerTe
         filter.setDeviceNameFilter("");
 
         EntityDataSortOrder sortOrder = new EntityDataSortOrder(
-                new EntityKey(EntityKeyType.ENTITY_FIELD, "createdTime", false), EntityDataSortOrder.Direction.ASC
+                new EntityKey("createdTime"), EntityDataSortOrder.Direction.ASC
         );
         EntityDataPageLink pageLink = new EntityDataPageLink(10, 0, null, sortOrder);
-        List<EntityKey> entityFields = Collections.singletonList(new EntityKey(EntityKeyType.ENTITY_FIELD, "name", false));
+        List<EntityKey> entityFields = Collections.singletonList(new EntityKey("name"));
 
         EntityDataQuery query = new EntityDataQuery(filter, pageLink, entityFields, null, null);
 
@@ -188,7 +175,7 @@ public abstract class BaseEntityQueryControllerTest extends AbstractControllerTe
         Assert.assertEquals(deviceNames, loadedNames);
 
         sortOrder = new EntityDataSortOrder(
-                new EntityKey(EntityKeyType.ENTITY_FIELD, "name", false), EntityDataSortOrder.Direction.DESC
+                new EntityKey("name"), EntityDataSortOrder.Direction.DESC
         );
 
         pageLink = new EntityDataPageLink(10, 0, "device1", sortOrder);
@@ -232,11 +219,11 @@ public abstract class BaseEntityQueryControllerTest extends AbstractControllerTe
         filter.setDeviceNameFilter("");
 
         EntityDataSortOrder sortOrder = new EntityDataSortOrder(
-                new EntityKey(EntityKeyType.ENTITY_FIELD, "createdTime", false), EntityDataSortOrder.Direction.ASC
+                new EntityKey("createdTime"), EntityDataSortOrder.Direction.ASC
         );
         EntityDataPageLink pageLink = new EntityDataPageLink(10, 0, null, sortOrder);
-        List<EntityKey> entityFields = Collections.singletonList(new EntityKey(EntityKeyType.ENTITY_FIELD, "name", false));
-        List<EntityKey> latestValues = Collections.singletonList(new EntityKey(EntityKeyType.ATTRIBUTE, "temperature", false));
+        List<EntityKey> entityFields = Collections.singletonList(new EntityKey("name"));
+        List<EntityKey> latestValues = Collections.singletonList(new EntityKey(EntityKeyType.ATTRIBUTE, "temperature", true));
 
         EntityDataQuery query = new EntityDataQuery(filter, pageLink, entityFields, latestValues, null);
         PageData<EntityData> data = doPostWithTypedResponse("/api/entitiesQuery/find", query, new TypeReference<PageData<EntityData>>() {
@@ -258,7 +245,7 @@ public abstract class BaseEntityQueryControllerTest extends AbstractControllerTe
 
         pageLink = new EntityDataPageLink(10, 0, null, sortOrder);
         KeyFilter highTemperatureFilter = new KeyFilter();
-        highTemperatureFilter.setKey(new EntityKey(EntityKeyType.ATTRIBUTE, "temperature", false));
+        highTemperatureFilter.setKey(new EntityKey(EntityKeyType.ATTRIBUTE, "temperature", true));
         NumericFilterPredicate predicate = new NumericFilterPredicate();
         predicate.setValue(FilterPredicateValue.fromDouble(45));
         predicate.setOperation(NumericFilterPredicate.NumericOperation.GREATER);

@@ -216,10 +216,9 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
                         return null;
                     }
                 }, s -> true, s -> {
-                    log.warn("TbTimeseriesSubscription: {}", s.getKeyStates());
                     List<TsKvEntry> subscriptionUpdate = null;
+                    Map<String, TbSubscriptionKeyState> keyStateMap = s.getKeyStates();
                     for (TsKvEntry kv : ts) {
-                        Map<String, TbSubscriptionKeyState> keyStateMap = s.getKeyStates();
                         boolean hasKeyState = keyStateMap.containsKey((kv.getKey()));
                         if (isInTimeRange(s, kv.getTs()) && (s.isAllKeys() || hasKeyState)) {
                             if (subscriptionUpdate == null) {
@@ -258,7 +257,6 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
                 },
                 s -> (TbAttributeSubscriptionScope.ANY_SCOPE.equals(s.getScope()) || scope.equals(s.getScope().name())),
                 s -> {
-                    log.warn("TbAttributeSubscriptionScope: {}", s.getKeyStates());
                     List<TsKvEntry> subscriptionUpdate = null;
                     Map<String, TbSubscriptionKeyState> keyStateMap = s.getKeyStates();
                     for (AttributeKvEntry kv : attributes) {
