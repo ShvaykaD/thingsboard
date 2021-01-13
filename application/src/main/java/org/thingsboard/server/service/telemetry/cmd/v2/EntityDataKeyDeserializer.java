@@ -13,27 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.thingsboard.server.common.data.query;
+package org.thingsboard.server.service.telemetry.cmd.v2;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.ObjectCodec;
+import com.fasterxml.jackson.core.TreeNode;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 
 import java.io.IOException;
 
-public class EntityKeyDeserializer extends JsonDeserializer<EntityKey> {
+public class EntityDataKeyDeserializer extends JsonDeserializer<EntityDataKey> {
 
     @Override
-    public EntityKey deserialize(JsonParser jsonParser, DeserializationContext ctx) throws IOException, JsonProcessingException {
+    public EntityDataKey deserialize(JsonParser jsonParser, DeserializationContext ctx) throws IOException, JsonProcessingException {
         ObjectCodec oc = jsonParser.getCodec();
-        ObjectNode node = oc.readTree(jsonParser);
-        if (node.has("dataConversion")) {
-            return new EntityKey(EntityKeyType.valueOf(node.get("type").asText()), node.get("key").asText(), node.get("dataConversion").asBoolean());
+        TreeNode treeNode = oc.readTree(jsonParser);
+        boolean isObject = treeNode.isObject();
+        if (isObject) {
+            ObjectNode node = (ObjectNode) treeNode;
+            return new EntityDataKey(node.get("key").asText(), node.get("dataConversion").asBoolean());
         } else {
-            return new EntityKey(EntityKeyType.valueOf(node.get("type").asText()), node.get("key").asText());
+            return new EntityDataKey(((TextNode) treeNode).asText(""));
         }
     }
 
