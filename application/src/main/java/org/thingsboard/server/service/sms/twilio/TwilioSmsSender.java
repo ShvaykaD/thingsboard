@@ -56,7 +56,7 @@ public class TwilioSmsSender extends AbstractSmsSender {
         message = this.prepareMessage(message);
         try {
             String numSegments = Message.creator(new PhoneNumber(numberTo), new PhoneNumber(this.numberFrom), message).create(this.twilioRestClient).getNumSegments();
-            return Integer.valueOf(numSegments);
+            return Integer.parseInt(numSegments);
         } catch (Exception e) {
             throw new SmsSendException("Failed to send SMS message - " + e.getMessage(), e);
         }

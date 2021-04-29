@@ -121,6 +121,7 @@
         <javax.el.version>3.0.0</javax.el.version>
         <javax.validation-api.version>2.0.1.Final</javax.validation-api.version>
         <antisamy.version>1.6.2</antisamy.version>
+        <jsmpp.version>2.3.11</jsmpp.version>
     </properties>
 
     <modules>
@@ -1597,6 +1598,11 @@
                         <artifactId>spotbugs-annotations</artifactId>
                     </exclusion>
                 </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.jsmpp</groupId>
+                <artifactId>jsmpp</artifactId>
+                <version>${jsmpp.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

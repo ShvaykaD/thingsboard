@@ -15,8 +15,19 @@
  */
 package org.thingsboard.server.common.data.sms.config;
 
-public enum SmsProviderType {
-    AWS_SNS,
-    TWILIO,
-    SMPP
+import lombok.Data;
+
+@Data
+public class SmppSmsProviderConfiguration implements SmsProviderConfiguration {
+
+    private String smppHost;
+    private int smppPort;
+    private String username;
+    private String password;
+
+    @Override
+    public SmsProviderType getType() {
+        return SmsProviderType.SMPP;
+    }
+
 }
