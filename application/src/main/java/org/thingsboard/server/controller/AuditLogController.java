@@ -18,6 +18,7 @@ package org.thingsboard.server.controller;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,7 +53,8 @@ public class AuditLogController extends BaseController {
     protected final String SORT_AUDIT_LOG_PROPERTY_ALLOWABLE_VALUES = "createdTime, entityName, entityType, user, type, status";
 
     @ApiOperation(value = "Get audit logs by customer id (getAuditLogsByCustomerId)",
-            notes = "Returns a page of audit logs by selected customer. " + PAGE_DATA_PARAMETERS)
+            notes = "Returns a page of audit logs by selected customer. " + PAGE_DATA_PARAMETERS,
+            produces = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasAuthority('TENANT_ADMIN')")
     @RequestMapping(value = "/audit/logs/customer/{customerId}", params = {"pageSize", "page"}, method = RequestMethod.GET)
     @ResponseBody
@@ -87,7 +89,8 @@ public class AuditLogController extends BaseController {
     }
 
     @ApiOperation(value = "Get audit logs by user id (getAuditLogsByUserId)",
-            notes = "Returns a page of audit logs by selected user. " + PAGE_DATA_PARAMETERS)
+            notes = "Returns a page of audit logs by selected user. " + PAGE_DATA_PARAMETERS,
+            produces = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasAuthority('TENANT_ADMIN')")
     @RequestMapping(value = "/audit/logs/user/{userId}", params = {"pageSize", "page"}, method = RequestMethod.GET)
     @ResponseBody
@@ -122,7 +125,8 @@ public class AuditLogController extends BaseController {
     }
 
     @ApiOperation(value = "Get audit logs by entity id (getAuditLogsByEntityId)",
-            notes = "Returns a page of audit logs by selected entity. " + PAGE_DATA_PARAMETERS)
+            notes = "Returns a page of audit logs by selected entity. " + PAGE_DATA_PARAMETERS,
+            produces = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasAuthority('TENANT_ADMIN')")
     @RequestMapping(value = "/audit/logs/entity/{entityType}/{entityId}", params = {"pageSize", "page"}, method = RequestMethod.GET)
     @ResponseBody
@@ -160,7 +164,7 @@ public class AuditLogController extends BaseController {
     }
 
     @ApiOperation(value = "Get all audit logs (getAuditLogs)",
-            notes = "Returns a page of audit logs. " + PAGE_DATA_PARAMETERS)
+            notes = "Returns a page of all audit logs. " + PAGE_DATA_PARAMETERS, produces = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasAuthority('TENANT_ADMIN')")
     @RequestMapping(value = "/audit/logs", params = {"pageSize", "page"}, method = RequestMethod.GET)
     @ResponseBody
