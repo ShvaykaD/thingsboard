@@ -46,6 +46,7 @@ import org.thingsboard.server.dao.relation.RelationService;
 import org.thingsboard.server.dao.rule.RuleChainService;
 import org.thingsboard.server.queue.util.TbCoreComponent;
 import org.thingsboard.server.service.component.ComponentDiscoveryService;
+import org.thingsboard.server.service.component.RuleNodeClassInfo;
 import org.thingsboard.server.service.entitiy.AbstractTbEntityService;
 import org.thingsboard.server.service.install.InstallScripts;
 import org.thingsboard.server.utils.TbNodeUpgradeUtils;
@@ -270,7 +271,7 @@ public class DefaultTbRuleChainService extends AbstractTbEntityService implement
         RuleChainId ruleChainId = ruleChain.getId();
         RuleChainId ruleChainMetaDataId = ruleChainMetaData.getRuleChainId();
         try {
-            RuleChainUpdateResult result = ruleChainService.saveRuleChainMetaData(tenantId, ruleChainMetaData, this::updateRuleNodeConfiguration);
+            RuleChainUpdateResult result = ruleChainService.saveRuleChainMetaData(tenantId, ruleChainMetaData, this::isStale, this::updateRuleNodeConfiguration);
             checkNotNull(result.isSuccess() ? true : null);
 
             List<RuleChain> updatedRuleChains;
@@ -392,13 +393,24 @@ public class DefaultTbRuleChainService extends AbstractTbEntityService implement
     }
 
     @Override
+    public boolean isStale(RuleNode node) {
+        var ruleNodeType = node.getType();
+        int configVersion = node.getConfigurationVersion();
+        try {
+            var ruleNodeClass = getRuleNodeClassInfo(ruleNodeType);
+            return ruleNodeClass.isVersioned() && configVersion < ruleNodeClass.getCurrentVersion();
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    @Override
     public RuleNode updateRuleNodeConfiguration(RuleNode node) {
         var ruleChainId = node.getRuleChainId();
         var ruleNodeId = node.getId();
         var ruleNodeType = node.getType();
         try {
-            var ruleNodeClass = componentDiscoveryService.getRuleNodeInfo(ruleNodeType)
-                    .orElseThrow(() -> new RuntimeException("Rule node " + ruleNodeType + " is not supported!"));
+            var ruleNodeClass = getRuleNodeClassInfo(ruleNodeType);
             if (ruleNodeClass.isVersioned()) {
                 int fromVersion = node.getConfigurationVersion();
                 int toVersion = ruleNodeClass.getCurrentVersion();
@@ -424,6 +436,12 @@ public class DefaultTbRuleChainService extends AbstractTbEntityService implement
         }
         return node;
     }
+
+    private RuleNodeClassInfo getRuleNodeClassInfo(String ruleNodeType) {
+        return componentDiscoveryService.getRuleNodeInfo(ruleNodeType)
+                .orElseThrow(() -> new RuntimeException("Rule node " + ruleNodeType + " is not supported!"));
+    }
+
 
     private Set<RuleChainId> updateRelatedRuleChains(TenantId tenantId, RuleChainId ruleChainId, Map<String, String> labelsMap) {
         Set<RuleChainId> updatedRuleChains = new HashSet<>();

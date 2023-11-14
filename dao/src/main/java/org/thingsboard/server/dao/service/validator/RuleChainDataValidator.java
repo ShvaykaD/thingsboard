@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Component
@@ -86,10 +87,10 @@ public class RuleChainDataValidator extends DataValidator<RuleChain> {
         }
     }
 
-    public static List<Throwable> validateMetaData(RuleChainMetaData ruleChainMetaData) {
+    public static List<Throwable> validateMetaData(RuleChainMetaData ruleChainMetaData, Function<RuleNode, Boolean> nodeStaleChecker) {
         ConstraintValidator.validateFields(ruleChainMetaData);
         List<Throwable> throwables = ruleChainMetaData.getNodes().stream()
-                .map(RuleChainDataValidator::validateRuleNode)
+                .map(node -> validateRuleNode(node, nodeStaleChecker.apply(node)))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
         if (CollectionUtils.isNotEmpty(ruleChainMetaData.getConnections())) {
@@ -98,10 +99,15 @@ public class RuleChainDataValidator extends DataValidator<RuleChain> {
         return throwables;
     }
 
-    public static Throwable validateRuleNode(RuleNode ruleNode) {
-        String errorPrefix = "'" + ruleNode.getName() + "' node configuration is invalid: ";
+    public static Throwable validateRuleNode(RuleNode ruleNode, boolean isStale) {
+        String name = ruleNode.getName();
+        String errorPrefix = "'" + name + "' node configuration is invalid: ";
         ConstraintValidator.validateFields(ruleNode, errorPrefix);
         Object nodeConfig;
+        if (isStale) {
+            log.debug("Rule node {} is stale! Configuration class validation skipped!", name);
+            return null;
+        }
         try {
             Class<Object> nodeConfigType = ReflectionUtils.getAnnotationProperty(ruleNode.getType(),
                     "org.thingsboard.rule.engine.api.RuleNode", "configClazz");

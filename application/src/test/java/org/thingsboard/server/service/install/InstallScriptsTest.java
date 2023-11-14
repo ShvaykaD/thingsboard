@@ -110,7 +110,7 @@ class InstallScriptsTest {
 
         RuleChainMetaData ruleChainMetaData = JacksonUtil.treeToValue(ruleChainJson.get("metadata"), RuleChainMetaData.class);
         ruleChainMetaData.setRuleChainId(ruleChain.getId());
-        List<Throwable> throwables = RuleChainDataValidator.validateMetaData(ruleChainMetaData);
+        List<Throwable> throwables = RuleChainDataValidator.validateMetaData(ruleChainMetaData, ruleNode -> false);
 
         assertThat(throwables).as("templateFilePath " + templateFilePath)
                 .containsExactlyInAnyOrderElementsOf(Collections.emptyList());

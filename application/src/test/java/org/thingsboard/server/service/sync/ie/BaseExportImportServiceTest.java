@@ -345,7 +345,7 @@ public abstract class BaseExportImportServiceTest extends AbstractControllerTest
         metaData.setNodes(Arrays.asList(ruleNode1, ruleNode2));
         metaData.setFirstNodeIndex(0);
         metaData.addConnectionInfo(0, 1, TbNodeConnectionType.SUCCESS);
-        ruleChainService.saveRuleChainMetaData(tenantId, metaData, Function.identity());
+        ruleChainService.saveRuleChainMetaData(tenantId, metaData, r -> false, Function.identity());
 
         return ruleChainService.findRuleChainById(tenantId, ruleChain.getId());
     }
@@ -383,7 +383,7 @@ public abstract class BaseExportImportServiceTest extends AbstractControllerTest
         metaData.setNodes(Arrays.asList(ruleNode1, ruleNode2));
         metaData.setFirstNodeIndex(0);
         metaData.addConnectionInfo(0, 1, TbNodeConnectionType.SUCCESS);
-        ruleChainService.saveRuleChainMetaData(tenantId, metaData, Function.identity());
+        ruleChainService.saveRuleChainMetaData(tenantId, metaData, r -> false, Function.identity());
 
         return ruleChainService.findRuleChainById(tenantId, ruleChain.getId());
     }

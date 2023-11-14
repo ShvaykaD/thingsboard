@@ -281,7 +281,7 @@ public class RuleChainServiceTest extends AbstractServiceTest {
 
         ruleNodes.set(name3Index, ruleNode4);
 
-        Assert.assertTrue(ruleChainService.saveRuleChainMetaData(tenantId, savedRuleChainMetaData, Function.identity()).isSuccess());
+        Assert.assertTrue(ruleChainService.saveRuleChainMetaData(tenantId, savedRuleChainMetaData, r -> false, Function.identity()).isSuccess());
         RuleChainMetaData updatedRuleChainMetaData = ruleChainService.loadRuleChainMetaData(tenantId, savedRuleChainMetaData.getRuleChainId());
 
         Assert.assertEquals(3, updatedRuleChainMetaData.getNodes().size());
@@ -312,14 +312,14 @@ public class RuleChainServiceTest extends AbstractServiceTest {
     @Test
     public void testUpdateRuleChainMetaDataWithCirclingRelation() {
         Assertions.assertThrows(DataValidationException.class, () -> {
-            ruleChainService.saveRuleChainMetaData(tenantId, createRuleChainMetadataWithCirclingRelation(), Function.identity());
+            ruleChainService.saveRuleChainMetaData(tenantId, createRuleChainMetadataWithCirclingRelation(), r -> false, Function.identity());
         });
     }
 
     @Test
     public void testUpdateRuleChainMetaDataWithCirclingRelation2() {
         Assertions.assertThrows(DataValidationException.class, () -> {
-            ruleChainService.saveRuleChainMetaData(tenantId, createRuleChainMetadataWithCirclingRelation2(), Function.identity());
+            ruleChainService.saveRuleChainMetaData(tenantId, createRuleChainMetadataWithCirclingRelation2(), r -> false, Function.identity());
         });
     }
 
@@ -396,7 +396,7 @@ public class RuleChainServiceTest extends AbstractServiceTest {
         ruleChainMetaData.addConnectionInfo(0,2,"fail");
         ruleChainMetaData.addConnectionInfo(1,2,"success");
 
-        Assert.assertTrue(ruleChainService.saveRuleChainMetaData(tenantId, ruleChainMetaData, Function.identity()).isSuccess());
+        Assert.assertTrue(ruleChainService.saveRuleChainMetaData(tenantId, ruleChainMetaData, r -> false, Function.identity()).isSuccess());
         return ruleChainService.loadRuleChainMetaData(tenantId, ruleChainMetaData.getRuleChainId());
     }
 

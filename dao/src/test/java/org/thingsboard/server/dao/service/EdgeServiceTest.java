@@ -640,7 +640,7 @@ public class EdgeServiceTest extends AbstractServiceTest {
         ruleChainMetaData3.setNodes(Arrays.asList(ruleNode1, ruleNode2));
         ruleChainMetaData3.setFirstNodeIndex(0);
         ruleChainMetaData3.setRuleChainId(ruleChain3.getId());
-        ruleChainService.saveRuleChainMetaData(tenantId, ruleChainMetaData3, Function.identity());
+        ruleChainService.saveRuleChainMetaData(tenantId, ruleChainMetaData3, r -> false, Function.identity());
 
         ruleChainService.assignRuleChainToEdge(tenantId, ruleChain3.getId(), savedEdge.getId());
 

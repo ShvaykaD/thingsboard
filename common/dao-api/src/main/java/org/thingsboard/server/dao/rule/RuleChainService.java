@@ -46,7 +46,8 @@ public interface RuleChainService extends EntityDaoService {
 
     boolean setRootRuleChain(TenantId tenantId, RuleChainId ruleChainId);
 
-    RuleChainUpdateResult saveRuleChainMetaData(TenantId tenantId, RuleChainMetaData ruleChainMetaData, Function<RuleNode, RuleNode> ruleNodeUpdater);
+    RuleChainUpdateResult saveRuleChainMetaData(TenantId tenantId, RuleChainMetaData ruleChainMetaData,
+                                                Function<RuleNode, Boolean> staleNodeChecker, Function<RuleNode, RuleNode> ruleNodeUpdater);
 
     RuleChainMetaData loadRuleChainMetaData(TenantId tenantId, RuleChainId ruleChainId);
 
@@ -76,7 +77,8 @@ public interface RuleChainService extends EntityDaoService {
 
     RuleChainData exportTenantRuleChains(TenantId tenantId, PageLink pageLink) throws ThingsboardException;
 
-    List<RuleChainImportResult> importTenantRuleChains(TenantId tenantId, RuleChainData ruleChainData, boolean overwrite, Function<RuleNode, RuleNode> ruleNodeUpdater);
+    List<RuleChainImportResult> importTenantRuleChains(TenantId tenantId, RuleChainData ruleChainData, boolean overwrite,
+                                                       Function<RuleNode, Boolean> staleNodeChecker, Function<RuleNode, RuleNode> ruleNodeUpdater);
 
     RuleChain assignRuleChainToEdge(TenantId tenantId, RuleChainId ruleChainId, EdgeId edgeId);
 

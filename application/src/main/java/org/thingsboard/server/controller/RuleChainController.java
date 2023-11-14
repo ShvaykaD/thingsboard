@@ -460,7 +460,8 @@ public class RuleChainController extends BaseController {
             @ApiParam(value = "Enables overwrite for existing rule chains with the same name.")
             @RequestParam(required = false, defaultValue = "false") boolean overwrite) throws ThingsboardException {
         TenantId tenantId = getCurrentUser().getTenantId();
-        List<RuleChainImportResult> importResults = ruleChainService.importTenantRuleChains(tenantId, ruleChainData, overwrite, tbRuleChainService::updateRuleNodeConfiguration);
+        List<RuleChainImportResult> importResults = ruleChainService.importTenantRuleChains(tenantId, ruleChainData, overwrite,
+                tbRuleChainService::isStale, tbRuleChainService::updateRuleNodeConfiguration);
         for (RuleChainImportResult importResult : importResults) {
             if (importResult.getError() == null) {
                 tbClusterService.broadcastEntityStateChangeEvent(importResult.getTenantId(), importResult.getRuleChainId(),

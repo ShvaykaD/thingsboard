@@ -56,5 +56,7 @@ public interface TbRuleChainService extends SimpleTbEntityService<RuleChain> {
 
     RuleChain unsetAutoAssignToEdgeRuleChain(TenantId tenantId, RuleChain ruleChain, User user) throws ThingsboardException;
 
+    boolean isStale(RuleNode ruleNode);
+
     RuleNode updateRuleNodeConfiguration(RuleNode ruleNode);
 }

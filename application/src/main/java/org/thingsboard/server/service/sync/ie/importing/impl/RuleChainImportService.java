@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.audit.ActionType;
-import org.thingsboard.server.common.data.exception.ThingsboardException;
 import org.thingsboard.server.common.data.id.RuleChainId;
 import org.thingsboard.server.common.data.id.RuleNodeId;
 import org.thingsboard.server.common.data.id.TenantId;
@@ -110,7 +109,8 @@ public class RuleChainImportService extends BaseEntityImportService<RuleChainId,
         ruleChain = ruleChainService.saveRuleChain(ruleChain);
         if (ctx.isFinalImportAttempt() || ctx.getCurrentImportResult().isUpdatedAllExternalIds()) {
             exportData.getMetaData().setRuleChainId(ruleChain.getId());
-            ruleChainService.saveRuleChainMetaData(ctx.getTenantId(), exportData.getMetaData(), tbRuleChainService::updateRuleNodeConfiguration);
+            ruleChainService.saveRuleChainMetaData(ctx.getTenantId(), exportData.getMetaData(),
+                    tbRuleChainService::isStale, tbRuleChainService::updateRuleNodeConfiguration);
             return ruleChainService.findRuleChainById(ctx.getTenantId(), ruleChain.getId());
         } else {
             return ruleChain;

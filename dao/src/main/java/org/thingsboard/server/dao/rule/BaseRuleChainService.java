@@ -149,13 +149,14 @@ public class BaseRuleChainService extends AbstractEntityService implements RuleC
     }
 
     @Override
-    public RuleChainUpdateResult saveRuleChainMetaData(TenantId tenantId, RuleChainMetaData ruleChainMetaData, Function<RuleNode, RuleNode> ruleNodeUpdater) {
+    public RuleChainUpdateResult saveRuleChainMetaData(TenantId tenantId, RuleChainMetaData ruleChainMetaData,
+                                                       Function<RuleNode, Boolean> staleNodeChecker, Function<RuleNode, RuleNode> ruleNodeUpdater) {
         Validator.validateId(ruleChainMetaData.getRuleChainId(), "Incorrect rule chain id.");
         RuleChain ruleChain = findRuleChainById(tenantId, ruleChainMetaData.getRuleChainId());
         if (ruleChain == null) {
             return RuleChainUpdateResult.failed();
         }
-        RuleChainDataValidator.validateMetaData(ruleChainMetaData);
+        RuleChainDataValidator.validateMetaData(ruleChainMetaData, staleNodeChecker);
 
         List<RuleNode> nodes = ruleChainMetaData.getNodes();
         List<RuleNode> toAddOrUpdate = new ArrayList<>();
@@ -458,7 +459,8 @@ public class BaseRuleChainService extends AbstractEntityService implements RuleC
     }
 
     @Override
-    public List<RuleChainImportResult> importTenantRuleChains(TenantId tenantId, RuleChainData ruleChainData, boolean overwrite, Function<RuleNode, RuleNode> ruleNodeUpdater) {
+    public List<RuleChainImportResult> importTenantRuleChains(TenantId tenantId, RuleChainData ruleChainData, boolean overwrite,
+                                                              Function<RuleNode, Boolean> staleNodeChecker, Function<RuleNode, RuleNode> ruleNodeUpdater) {
         List<RuleChainImportResult> importResults = new ArrayList<>();
 
         setRandomRuleChainIds(ruleChainData);
@@ -495,7 +497,7 @@ public class BaseRuleChainService extends AbstractEntityService implements RuleC
         }
 
         if (CollectionUtils.isNotEmpty(ruleChainData.getMetadata())) {
-            ruleChainData.getMetadata().forEach(md -> saveRuleChainMetaData(tenantId, md, ruleNodeUpdater));
+            ruleChainData.getMetadata().forEach(md -> saveRuleChainMetaData(tenantId, md, staleNodeChecker, ruleNodeUpdater));
         }
 
         return importResults;

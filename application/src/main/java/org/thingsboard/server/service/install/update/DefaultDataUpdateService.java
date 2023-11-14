@@ -553,7 +553,7 @@ public class DefaultDataUpdateService implements DataUpdateService {
                             md.getNodes().add(ruleNode);
                             md.setFirstNodeIndex(newIdx);
                             md.addConnectionInfo(newIdx, oldIdx, TbNodeConnectionType.SUCCESS);
-                            ruleChainService.saveRuleChainMetaData(tenant.getId(), md, Function.identity());
+                            ruleChainService.saveRuleChainMetaData(tenant.getId(), md, r -> false, Function.identity());
                         }
                     } catch (Exception e) {
                         log.error("[{}] Unable to update Tenant: {}", tenant.getId(), tenant.getName(), e);

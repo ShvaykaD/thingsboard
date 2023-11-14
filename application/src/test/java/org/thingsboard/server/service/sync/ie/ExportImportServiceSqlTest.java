@@ -404,7 +404,7 @@ public class ExportImportServiceSqlTest extends BaseExportImportServiceTest {
         generatorNode.setConfiguration(JacksonUtil.valueToTree(generatorNodeConfig));
         nodes.add(generatorNode);
         metaData.setNodes(nodes);
-        ruleChainService.saveRuleChainMetaData(tenantId1, metaData, Function.identity());
+        ruleChainService.saveRuleChainMetaData(tenantId1, metaData, r -> false, Function.identity());
 
         EntityExportData<RuleChain> ruleChainExportData = exportEntity(tenantAdmin1, ruleChain.getId());
         EntityExportData<Customer> customerExportData = exportEntity(tenantAdmin1, customer.getId());
