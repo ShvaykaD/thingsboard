@@ -87,10 +87,10 @@ public class RuleChainDataValidator extends DataValidator<RuleChain> {
         }
     }
 
-    public static List<Throwable> validateMetaData(RuleChainMetaData ruleChainMetaData, Function<RuleNode, Boolean> nodeStaleChecker) {
+    public static List<Throwable> validateMetaData(RuleChainMetaData ruleChainMetaData, Function<RuleNode, Boolean> staleNodeChecker) {
         ConstraintValidator.validateFields(ruleChainMetaData);
         List<Throwable> throwables = ruleChainMetaData.getNodes().stream()
-                .map(node -> validateRuleNode(node, nodeStaleChecker.apply(node)))
+                .map(node -> validateRuleNode(node, staleNodeChecker.apply(node)))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
         if (CollectionUtils.isNotEmpty(ruleChainMetaData.getConnections())) {
