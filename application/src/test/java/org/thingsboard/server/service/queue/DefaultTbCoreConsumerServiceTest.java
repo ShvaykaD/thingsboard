@@ -29,6 +29,7 @@ import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.msg.queue.TbCallback;
 import org.thingsboard.server.gen.transport.TransportProtos;
+import org.thingsboard.server.service.ruleengine.RuleEngineCallService;
 import org.thingsboard.server.service.state.DeviceStateService;
 
 import java.util.UUID;
@@ -36,8 +37,10 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 
@@ -48,6 +51,8 @@ public class DefaultTbCoreConsumerServiceTest {
     private DeviceStateService stateServiceMock;
     @Mock
     private TbCoreConsumerStats statsMock;
+    @Mock
+    private RuleEngineCallService ruleEngineCallServiceMock;
 
     @Mock
     private TbCallback tbCallbackMock;
@@ -529,4 +534,18 @@ public class DefaultTbCoreConsumerServiceTest {
         then(statsMock).should(never()).log(inactivityMsg);
     }
 
+    @Test
+    public void givenRestApiCallResponseMsgProto_whenForwardToRuleEngineCallService_thenCallOnQueueMsg() {
+        // GIVEN
+        ReflectionTestUtils.setField(defaultTbCoreConsumerServiceMock, "ruleEngineCallService", ruleEngineCallServiceMock);
+        var restApiCallResponseMsgProto = TransportProtos.RestApiCallResponseMsgProto.newBuilder().build();
+        doCallRealMethod().when(defaultTbCoreConsumerServiceMock).forwardToRuleEngineCallService(restApiCallResponseMsgProto, tbCallbackMock);
+        doNothing().when(ruleEngineCallServiceMock).onQueueMsg(restApiCallResponseMsgProto, tbCallbackMock);
+
+        // WHEN
+        defaultTbCoreConsumerServiceMock.forwardToRuleEngineCallService(restApiCallResponseMsgProto, tbCallbackMock);
+
+        // THEN
+        then(ruleEngineCallServiceMock).should().onQueueMsg(eq(restApiCallResponseMsgProto), eq(tbCallbackMock));
+    }
 }

@@ -25,9 +25,13 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.thingsboard.server.cluster.TbClusterService;
 import org.thingsboard.server.common.data.DataConstants;
+import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.QueueId;
 import org.thingsboard.server.common.data.id.TenantId;
+import org.thingsboard.server.common.data.msg.TbMsgType;
 import org.thingsboard.server.common.data.queue.Queue;
+import org.thingsboard.server.common.msg.TbMsg;
+import org.thingsboard.server.common.msg.TbMsgMetaData;
 import org.thingsboard.server.common.msg.queue.ServiceType;
 import org.thingsboard.server.dao.edge.EdgeService;
 import org.thingsboard.server.gen.transport.TransportProtos;
@@ -235,6 +239,36 @@ public class DefaultTbClusterServiceTest {
                 .send(eq(topicService.getNotificationsTopic(ServiceType.TB_TRANSPORT, monolith1)), any(TbProtoQueueMsg.class), isNull());
         verify(tbTransportQueueProducer, never())
                 .send(eq(topicService.getNotificationsTopic(ServiceType.TB_TRANSPORT, monolith2)), any(TbProtoQueueMsg.class), isNull());
+    }
+
+    @Test
+    public void testPushNotificationToCoreWithRestApiCallResponseMsgProto() {
+        TbQueueProducer<TbProtoQueueMsg<TransportProtos.ToCoreNotificationMsg>> tbCoreQueueProducer = mock(TbQueueProducer.class);
+
+        when(producerProvider.getTbCoreNotificationsMsgProducer()).thenReturn(tbCoreQueueProducer);
+
+        clusterService.pushNotificationToCore(CORE, TransportProtos.RestApiCallResponseMsgProto.newBuilder().build(), null);
+
+        verify(topicService).getNotificationsTopic(eq(ServiceType.TB_CORE), eq(CORE));
+        verify(producerProvider).getTbCoreNotificationsMsgProducer();
+        verify(tbCoreQueueProducer).send(eq(topicService.getNotificationsTopic(ServiceType.TB_CORE, CORE)), any(TbProtoQueueMsg.class), isNull());
+    }
+
+    @Test
+    public void testPushMsgToRuleEngineUsingQueueFromMsg() {
+        TenantId tenantId = TenantId.SYS_TENANT_ID;
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        TbMsg msg = TbMsg.newMsg("main", TbMsgType.REST_API_REQUEST, deviceId, null, TbMsgMetaData.EMPTY, TbMsg.EMPTY_JSON_OBJECT);
+        TbQueueProducer<TbProtoQueueMsg<TransportProtos.ToRuleEngineMsg>> tbREQueueProducer = mock(TbQueueProducer.class);
+
+        when(producerProvider.getRuleEngineMsgProducer()).thenReturn(tbREQueueProducer);
+
+        clusterService.pushMsgToRuleEngine(tenantId, tenantId, msg, true, null);
+
+        verify(partitionService).resolve(eq(ServiceType.TB_RULE_ENGINE), eq("main"), eq(tenantId), eq(tenantId));
+        verify(producerProvider).getRuleEngineMsgProducer();
+        verify(tbREQueueProducer)
+                .send(eq(partitionService.resolve(ServiceType.TB_RULE_ENGINE, "main", tenantId, tenantId)), any(TbProtoQueueMsg.class), isNull());
     }
 
     protected Queue createTestQueue() {
