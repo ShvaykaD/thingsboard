@@ -18,6 +18,9 @@ package org.thingsboard.rule.engine.rest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,8 +36,10 @@ import org.thingsboard.server.common.msg.TbMsgMetaData;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatNoException;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,28 +66,48 @@ public class TbSendRestApiCallReplyNodeTest {
     }
 
     @Test
-    void givenValidRestApiRequest_whenOnMsg_thenTellSuccess() {
+    public void givenDefaultConfig_whenInit_thenDoesNotThrowException() {
+        var configuration = new TbNodeConfiguration(JacksonUtil.valueToTree(config));
+        assertThatNoException().isThrownBy(() -> node.init(ctxMock, configuration));
+    }
+
+    @ParameterizedTest
+    @MethodSource
+    public void givenValidRestApiRequest_whenOnMsg_thenTellSuccess(String requestIdAttribute, String serviceIdAttribute) throws TbNodeException {
+        config.setRequestIdMetaDataAttribute(requestIdAttribute);
+        config.setServiceIdMetaDataAttribute(serviceIdAttribute);
+        var configuration = new TbNodeConfiguration(JacksonUtil.valueToTree(config));
+        node.init(ctxMock, configuration);
         when(ctxMock.getRpcService()).thenReturn(rpcServiceMock);
+        String requestUUIDStr = "80b7883b-7ec6-4872-9dd3-b2afd5660fa6";
         String data = """
                 {
                 "temperature": 23,
                 }
                 """;
         Map<String, String> metadata = Map.of(
-                "requestUUID", "80b7883b-7ec6-4872-9dd3-b2afd5660fa6",
-                "serviceId", "tb-core-0");
-        TbMsg msg = TbMsg.newMsg(null, TbMsgType.REST_API_REQUEST, DEVICE_ID, new TbMsgMetaData(metadata), data);
+                requestIdAttribute, requestUUIDStr,
+                serviceIdAttribute, "tb-core-0");
+        TbMsg msg = TbMsg.newMsg(TbMsgType.REST_API_REQUEST, DEVICE_ID, new TbMsgMetaData(metadata), data);
 
         node.onMsg(ctxMock, msg);
 
-        UUID requestUUID = UUID.fromString("80b7883b-7ec6-4872-9dd3-b2afd5660fa6");
-        verify(rpcServiceMock).sendRestApiCallReply(eq("tb-core-0"), eq(requestUUID), eq(msg));
-        verify(ctxMock).tellSuccess(eq(msg));
+        UUID requestUUID = UUID.fromString(requestUUIDStr);
+        verify(rpcServiceMock).sendRestApiCallReply("tb-core-0", requestUUID, msg);
+        verify(ctxMock).tellSuccess(msg);
+    }
+
+    private static Stream<Arguments> givenValidRestApiRequest_whenOnMsg_thenTellSuccess() {
+        return Stream.of(
+                Arguments.of("requestId", "service"),
+                Arguments.of("requestUUID", "serviceId"),
+                Arguments.of("some_custom_request_id_field", "some_custom_service_id_field")
+        );
     }
 
     @Test
-    void givenRequestIdIsNotPresent_whenOnMsg_thenTellFailure() {
-        TbMsg msg = TbMsg.newMsg(null, TbMsgType.REST_API_REQUEST, DEVICE_ID, TbMsgMetaData.EMPTY, TbMsg.EMPTY_STRING);
+    public void givenRequestIdIsNotPresent_whenOnMsg_thenTellFailure() {
+        TbMsg msg = TbMsg.newMsg(TbMsgType.REST_API_REQUEST, DEVICE_ID, TbMsgMetaData.EMPTY, TbMsg.EMPTY_STRING);
 
         node.onMsg(ctxMock, msg);
 
@@ -93,9 +118,9 @@ public class TbSendRestApiCallReplyNodeTest {
     }
 
     @Test
-    void givenRequestBodyIsEmpty_whenOnMsg_thenTellFailure() {
+    public void givenRequestBodyIsEmpty_whenOnMsg_thenTellFailure() {
         Map<String, String> metadata = Map.of("requestUUID", "80b7883b-7ec6-4872-9dd3-b2afd5660fa6");
-        TbMsg msg = TbMsg.newMsg(null, TbMsgType.REST_API_REQUEST, DEVICE_ID, new TbMsgMetaData(metadata), TbMsg.EMPTY_STRING);
+        TbMsg msg = TbMsg.newMsg(TbMsgType.REST_API_REQUEST, DEVICE_ID, new TbMsgMetaData(metadata), TbMsg.EMPTY_STRING);
 
         node.onMsg(ctxMock, msg);
 

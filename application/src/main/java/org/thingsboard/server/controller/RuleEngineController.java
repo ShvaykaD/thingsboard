@@ -78,7 +78,7 @@ public class RuleEngineController extends BaseController {
                     "Uses current User Id ( the one which credentials is used to perform the request) as the Rule Engine message originator. " +
                     MSG_DESCRIPTION +
                     "The default timeout of the request processing is 10 seconds."
-                    + "\n\n" + ControllerConstants.RBAC_WRITE_CHECK)
+                    + "\n\n" + ControllerConstants.SECURITY_WRITE_CHECK)
     @PreAuthorize("hasAnyAuthority('SYS_ADMIN', 'TENANT_ADMIN', 'CUSTOMER_USER')")
     @RequestMapping(value = "/", method = RequestMethod.POST)
     @ResponseBody
@@ -93,7 +93,7 @@ public class RuleEngineController extends BaseController {
                     "Uses specified Entity Id as the Rule Engine message originator. " +
                     MSG_DESCRIPTION +
                     "The default timeout of the request processing is 10 seconds."
-                    + "\n\n" + ControllerConstants.RBAC_WRITE_CHECK)
+                    + "\n\n" + ControllerConstants.SECURITY_WRITE_CHECK)
     @PreAuthorize("hasAnyAuthority('SYS_ADMIN', 'TENANT_ADMIN', 'CUSTOMER_USER')")
     @RequestMapping(value = "/{entityType}/{entityId}", method = RequestMethod.POST)
     @ResponseBody
@@ -112,7 +112,7 @@ public class RuleEngineController extends BaseController {
                     "Uses specified Entity Id as the Rule Engine message originator. " +
                     MSG_DESCRIPTION +
                     "The platform expects the timeout value in milliseconds."
-                    + "\n\n" + ControllerConstants.RBAC_WRITE_CHECK)
+                    + "\n\n" + ControllerConstants.SECURITY_WRITE_CHECK)
     @PreAuthorize("hasAnyAuthority('SYS_ADMIN', 'TENANT_ADMIN', 'CUSTOMER_USER')")
     @RequestMapping(value = "/{entityType}/{entityId}/{timeout}", method = RequestMethod.POST)
     @ResponseBody
@@ -134,7 +134,7 @@ public class RuleEngineController extends BaseController {
                     MSG_DESCRIPTION +
                     "If request sent for Device/Device Profile or Asset/Asset Profile entity, specified queue will be used instead of the queue selected in the device or asset profile. " +
                     "The platform expects the timeout value in milliseconds."
-                    + "\n\n" + ControllerConstants.RBAC_WRITE_CHECK)
+                    + "\n\n" + ControllerConstants.SECURITY_WRITE_CHECK)
     @PreAuthorize("hasAnyAuthority('SYS_ADMIN', 'TENANT_ADMIN', 'CUSTOMER_USER')")
     @RequestMapping(value = "/{entityType}/{entityId}/{queueName}/{timeout}", method = RequestMethod.POST)
     @ResponseBody
@@ -170,8 +170,8 @@ public class RuleEngineController extends BaseController {
                     metaData.put("requestUUID", requestId.toString());
                     metaData.put("expirationTime", Long.toString(expTime));
                     TbMsg msg = TbMsg.newMsg(queueName, TbMsgType.REST_API_REQUEST, entityId, currentUser.getCustomerId(), new TbMsgMetaData(metaData), requestBody);
-                    ruleEngineCallService.processRestAPICallToRuleEngine(currentUser.getTenantId(), requestId, msg, queueName != null,
-                            response -> reply(new LocalRequest(msg, currentUser, result), response));
+                    ruleEngineCallService.processRestApiCallToRuleEngine(currentUser.getTenantId(), requestId, msg, queueName != null,
+                            reply -> reply(new LocalRequestMetaData(msg, currentUser, result), reply));
                 }
 
                 @Override
@@ -192,7 +192,7 @@ public class RuleEngineController extends BaseController {
         }
     }
 
-    private void reply(LocalRequest rpcRequest, TbMsg response) {
+    private void reply(LocalRequestMetaData rpcRequest, TbMsg response) {
         DeferredResult<ResponseEntity> responseWriter = rpcRequest.responseWriter;
         if (response == null) {
             logRuleEngineCall(rpcRequest, null, new TimeoutException("Processing timeout detected!"));
@@ -215,8 +215,8 @@ public class RuleEngineController extends BaseController {
         }
     }
 
-    private void logRuleEngineCall(LocalRequest rpcRequest, TbMsg response, Throwable e) {
-        logRuleEngineCall(rpcRequest.user, rpcRequest.msg.getOriginator(), rpcRequest.msg.getData(), response, e);
+    private void logRuleEngineCall(LocalRequestMetaData rpcRequest, TbMsg response, Throwable e) {
+        logRuleEngineCall(rpcRequest.user, rpcRequest.request.getOriginator(), rpcRequest.request.getData(), response, e);
     }
 
     private void logRuleEngineCall(SecurityUser user, EntityId entityId, String request, TbMsg response, Throwable e) {
@@ -233,5 +233,5 @@ public class RuleEngineController extends BaseController {
                 response != null ? response.getData() : "");
     }
 
-    private record LocalRequest(TbMsg msg, SecurityUser user, DeferredResult<ResponseEntity> responseWriter) {}
+    private record LocalRequestMetaData(TbMsg request, SecurityUser user, DeferredResult<ResponseEntity> responseWriter) {}
 }

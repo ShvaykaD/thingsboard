@@ -538,14 +538,13 @@ public class DefaultTbCoreConsumerServiceTest {
     public void givenRestApiCallResponseMsgProto_whenForwardToRuleEngineCallService_thenCallOnQueueMsg() {
         // GIVEN
         ReflectionTestUtils.setField(defaultTbCoreConsumerServiceMock, "ruleEngineCallService", ruleEngineCallServiceMock);
-        var restApiCallResponseMsgProto = TransportProtos.RestApiCallResponseMsgProto.newBuilder().build();
+        var restApiCallResponseMsgProto = TransportProtos.RestApiCallResponseMsgProto.getDefaultInstance();
         doCallRealMethod().when(defaultTbCoreConsumerServiceMock).forwardToRuleEngineCallService(restApiCallResponseMsgProto, tbCallbackMock);
-        doNothing().when(ruleEngineCallServiceMock).onQueueMsg(restApiCallResponseMsgProto, tbCallbackMock);
 
         // WHEN
         defaultTbCoreConsumerServiceMock.forwardToRuleEngineCallService(restApiCallResponseMsgProto, tbCallbackMock);
 
         // THEN
-        then(ruleEngineCallServiceMock).should().onQueueMsg(eq(restApiCallResponseMsgProto), eq(tbCallbackMock));
+        then(ruleEngineCallServiceMock).should().onQueueMsg(restApiCallResponseMsgProto, tbCallbackMock);
     }
 }

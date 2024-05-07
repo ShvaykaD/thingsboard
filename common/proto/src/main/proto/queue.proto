@@ -1471,7 +1471,7 @@ message ToCoreNotificationMsg {
   ToEdgeSyncRequestMsgProto toEdgeSyncRequest = 11;
   FromEdgeSyncResponseMsgProto fromEdgeSyncResponse = 12;
   ResourceCacheInvalidateMsg resourceCacheInvalidateMsg = 13;
-  RestApiCallResponseMsgProto restApiCallResponseMsg = 14;
+  RestApiCallResponseMsgProto restApiCallResponseMsg = 50;
 }
 
 /* Messages that are handled by ThingsBoard RuleEngine Service */

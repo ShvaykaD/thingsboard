@@ -17,36 +17,31 @@ package org.thingsboard.server.service.rpc;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.thingsboard.server.cluster.TbClusterService;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.msg.TbMsgType;
 import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.msg.TbMsgMetaData;
 import org.thingsboard.server.gen.transport.TransportProtos;
-
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.doCallRealMethod;
-import static org.mockito.Mockito.doNothing;
 
 @ExtendWith(MockitoExtension.class)
 class DefaultTbRuleEngineRpcServiceTest {
 
     @Mock
-    private DefaultTbRuleEngineRpcService tbRuleEngineRpcService;
-    @Mock
     private TbClusterService tbClusterServiceMock;
+
+    @InjectMocks
+    private DefaultTbRuleEngineRpcService tbRuleEngineRpcService;
 
     @Test
     public void givenTbMsg_whenSendRestApiCallReply_thenPushNotificationToCore() {
         // GIVEN
-        ReflectionTestUtils.setField(tbRuleEngineRpcService, "clusterService", tbClusterServiceMock);
         String serviceId = "tb-core-0";
         UUID requestId = UUID.fromString("f64a20df-eb1e-46a3-ba6f-0b3ae053ee0a");
         DeviceId deviceId = new DeviceId(UUID.fromString("1d9f771a-7cdc-4ac7-838c-ba193d05a012"));
@@ -56,13 +51,11 @@ class DefaultTbRuleEngineRpcServiceTest {
                 .setRequestIdLSB(requestId.getLeastSignificantBits())
                 .setResponse(TbMsg.toByteString(msg))
                 .build();
-        doCallRealMethod().when(tbRuleEngineRpcService).sendRestApiCallReply(serviceId, requestId, msg);
-        doNothing().when(tbClusterServiceMock).pushNotificationToCore(serviceId, restApiCallResponseMsgProto, null);
 
         // WHEN
         tbRuleEngineRpcService.sendRestApiCallReply(serviceId, requestId, msg);
 
         // THEN
-        then(tbClusterServiceMock).should().pushNotificationToCore(eq(serviceId), eq(restApiCallResponseMsgProto), isNull());
+        then(tbClusterServiceMock).should().pushNotificationToCore(serviceId, restApiCallResponseMsgProto, null);
     }
 }

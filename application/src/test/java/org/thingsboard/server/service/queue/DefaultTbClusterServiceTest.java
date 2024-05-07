@@ -247,7 +247,7 @@ public class DefaultTbClusterServiceTest {
 
         when(producerProvider.getTbCoreNotificationsMsgProducer()).thenReturn(tbCoreQueueProducer);
 
-        clusterService.pushNotificationToCore(CORE, TransportProtos.RestApiCallResponseMsgProto.newBuilder().build(), null);
+        clusterService.pushNotificationToCore(CORE, TransportProtos.RestApiCallResponseMsgProto.getDefaultInstance(), null);
 
         verify(topicService).getNotificationsTopic(eq(ServiceType.TB_CORE), eq(CORE));
         verify(producerProvider).getTbCoreNotificationsMsgProducer();

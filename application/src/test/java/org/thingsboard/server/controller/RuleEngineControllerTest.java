@@ -15,6 +15,7 @@
  */
 package org.thingsboard.server.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.mock.mockito.SpyBean;
@@ -61,7 +62,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
             Consumer<TbMsg> consumer = invocation.getArgument(4);
             consumer.accept(msg);
             return null;
-        }).when(ruleEngineCallService).processRestAPICallToRuleEngine(eq(TenantId.SYS_TENANT_ID), any(UUID.class), any(TbMsg.class), anyBoolean(), any());
+        }).when(ruleEngineCallService).processRestApiCallToRuleEngine(eq(TenantId.SYS_TENANT_ID), any(UUID.class), any(TbMsg.class), anyBoolean(), any());
 
         MvcResult result = doPost("/api/rule-engine/", (Object) REQUEST_BODY).andReturn();
 
@@ -69,7 +70,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(Objects.requireNonNull(response.getBody()).toString()).isEqualTo(REQUEST_BODY);
         ArgumentCaptor<TbMsg> captor = ArgumentCaptor.forClass(TbMsg.class);
-        verify(ruleEngineCallService).processRestAPICallToRuleEngine(eq(TenantId.SYS_TENANT_ID), any(), captor.capture(), eq(false), any());
+        verify(ruleEngineCallService).processRestApiCallToRuleEngine(eq(TenantId.SYS_TENANT_ID), any(), captor.capture(), eq(false), any());
         TbMsg tbMsg = captor.getValue();
         assertThat(tbMsg.getData()).isEqualTo(REQUEST_BODY);
         assertThat(tbMsg.getType()).isEqualTo(msg.getType());
@@ -81,12 +82,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         Device device = createDevice("Test", "123");
         String deviceIdStr = String.valueOf(device.getId().getId());
         TbMsg msg = TbMsg.newMsg(null, TbMsgType.REST_API_REQUEST, device.getId(), null, TbMsgMetaData.EMPTY, REQUEST_BODY);
-
-        doAnswer(invocation -> {
-            Consumer<TbMsg> consumer = invocation.getArgument(4);
-            consumer.accept(msg);
-            return null;
-        }).when(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(UUID.class), any(TbMsg.class), anyBoolean(), any());
+       mockSuccessfulRestApiCallToRuleEngine(msg);
 
         MvcResult result = doPost("/api/rule-engine/DEVICE/" + deviceIdStr, (Object) REQUEST_BODY).andReturn();
 
@@ -94,7 +90,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(Objects.requireNonNull(response.getBody()).toString()).isEqualTo(REQUEST_BODY);
         ArgumentCaptor<TbMsg> captor = ArgumentCaptor.forClass(TbMsg.class);
-        verify(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(false), any());
+        verify(ruleEngineCallService).processRestApiCallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(false), any());
         TbMsg tbMsg = captor.getValue();
         assertThat(tbMsg.getData()).isEqualTo(REQUEST_BODY);
         assertThat(tbMsg.getType()).isEqualTo(msg.getType());
@@ -106,12 +102,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         Device device = createDevice("Test", "123");
         String deviceIdStr = String.valueOf(device.getId().getId());
         TbMsg msg = TbMsg.newMsg(null, TbMsgType.REST_API_REQUEST, device.getId(), null, TbMsgMetaData.EMPTY, REQUEST_BODY);
-
-        doAnswer(invocation -> {
-            Consumer<TbMsg> consumer = invocation.getArgument(4);
-            consumer.accept(msg);
-            return null;
-        }).when(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(UUID.class), any(TbMsg.class), anyBoolean(), any());
+        mockSuccessfulRestApiCallToRuleEngine(msg);
 
         MvcResult result = doPost("/api/rule-engine/DEVICE/" + deviceIdStr + "/15000", (Object) REQUEST_BODY).andReturn();
 
@@ -119,7 +110,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(Objects.requireNonNull(response.getBody()).toString()).isEqualTo(REQUEST_BODY);
         ArgumentCaptor<TbMsg> captor = ArgumentCaptor.forClass(TbMsg.class);
-        verify(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(false), any());
+        verify(ruleEngineCallService).processRestApiCallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(false), any());
         TbMsg tbMsg = captor.getValue();
         assertThat(tbMsg.getData()).isEqualTo(REQUEST_BODY);
         assertThat(tbMsg.getType()).isEqualTo(msg.getType());
@@ -131,19 +122,14 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         Device device = createDevice("Test", "123");
         String deviceIdStr = String.valueOf(device.getId().getId());
         TbMsg msg = TbMsg.newMsg(null, TbMsgType.REST_API_REQUEST, device.getId(), null, TbMsgMetaData.EMPTY, REQUEST_BODY);
-
-        doAnswer(invocation -> {
-            Consumer<TbMsg> consumer = invocation.getArgument(4);
-            consumer.accept(null);
-            return null;
-        }).when(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(UUID.class), any(TbMsg.class), anyBoolean(), any());
+        mockSuccessfulRestApiCallToRuleEngine(msg);
 
         MvcResult result = doPost("/api/rule-engine/DEVICE/" + deviceIdStr + "/15000", (Object) REQUEST_BODY).andReturn();
 
         ResponseEntity response = (ResponseEntity) result.getAsyncResult();
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.REQUEST_TIMEOUT);
         ArgumentCaptor<TbMsg> captor = ArgumentCaptor.forClass(TbMsg.class);
-        verify(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(false), any());
+        verify(ruleEngineCallService).processRestApiCallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(false), any());
         TbMsg tbMsg = captor.getValue();
         assertThat(tbMsg.getData()).isEqualTo(REQUEST_BODY);
         assertThat(tbMsg.getType()).isEqualTo(msg.getType());
@@ -155,12 +141,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         Device device = createDevice("Test", "123");
         String deviceIdStr = String.valueOf(device.getId().getId());
         TbMsg msg = TbMsg.newMsg("HighPriority", TbMsgType.REST_API_REQUEST, device.getId(), null, TbMsgMetaData.EMPTY, REQUEST_BODY);
-
-        doAnswer(invocation -> {
-            Consumer<TbMsg> consumer = invocation.getArgument(4);
-            consumer.accept(msg);
-            return null;
-        }).when(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(UUID.class), any(TbMsg.class), anyBoolean(), any());
+        mockSuccessfulRestApiCallToRuleEngine(msg);
 
         MvcResult result = doPost("/api/rule-engine/DEVICE/" + deviceIdStr + "/HighPriority/1000", (Object) REQUEST_BODY).andReturn();
 
@@ -168,7 +149,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(Objects.requireNonNull(response.getBody()).toString()).isEqualTo(REQUEST_BODY);
         ArgumentCaptor<TbMsg> captor = ArgumentCaptor.forClass(TbMsg.class);
-        verify(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(true), any());
+        verify(ruleEngineCallService).processRestApiCallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(true), any());
         TbMsg tbMsg = captor.getValue();
         assertThat(tbMsg.getData()).isEqualTo(REQUEST_BODY);
         assertThat(tbMsg.getType()).isEqualTo(msg.getType());
@@ -195,12 +176,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         loginCustomerUser();
 
         TbMsg msg = TbMsg.newMsg(null, TbMsgType.REST_API_REQUEST, device.getId(), null, TbMsgMetaData.EMPTY, REQUEST_BODY);
-
-        doAnswer(invocation -> {
-            Consumer<TbMsg> consumer = invocation.getArgument(4);
-            consumer.accept(msg);
-            return null;
-        }).when(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(UUID.class), any(TbMsg.class), anyBoolean(), any());
+        mockSuccessfulRestApiCallToRuleEngine(msg);
 
         MvcResult result = doPost("/api/rule-engine/DEVICE/" + deviceIdStr, (Object) REQUEST_BODY).andReturn();
 
@@ -208,7 +184,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(Objects.requireNonNull(response.getBody()).toString()).isEqualTo(REQUEST_BODY);
         ArgumentCaptor<TbMsg> captor = ArgumentCaptor.forClass(TbMsg.class);
-        verify(ruleEngineCallService).processRestAPICallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(false), any());
+        verify(ruleEngineCallService).processRestApiCallToRuleEngine(eq(tenantId), any(), captor.capture(), eq(false), any());
         TbMsg tbMsg = captor.getValue();
         assertThat(tbMsg.getData()).isEqualTo(REQUEST_BODY);
         assertThat(tbMsg.getType()).isEqualTo(msg.getType());
@@ -226,7 +202,7 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         ResponseEntity response = (ResponseEntity) result.getAsyncResult();
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(Objects.requireNonNull(response.getBody()).toString()).isEqualTo("You don't have permission to perform this operation!");
-        verify(ruleEngineCallService, never()).processRestAPICallToRuleEngine(any(), any(), any(), anyBoolean(), any());
+        verify(ruleEngineCallService, never()).processRestApiCallToRuleEngine(any(), any(), any(), anyBoolean(), any());
     }
 
     @Test
@@ -234,5 +210,13 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
         doPost("/api/rule-engine/", (Object) REQUEST_BODY)
                 .andExpect(status().isUnauthorized())
                 .andExpect(statusReason(containsString("Authentication failed")));
+    }
+
+    private void mockSuccessfulRestApiCallToRuleEngine(TbMsg msg) {
+        doAnswer(invocation -> {
+            Consumer<TbMsg> consumer = invocation.getArgument(4);
+            consumer.accept(msg);
+            return null;
+        }).when(ruleEngineCallService).processRestApiCallToRuleEngine(eq(tenantId), any(UUID.class), any(TbMsg.class), anyBoolean(), any());
     }
 }
