@@ -58,7 +58,7 @@ public class TbSendRestApiCallReplyNodeTest {
     private RuleEngineRpcService rpcServiceMock;
 
     @BeforeEach
-    void setUp() throws TbNodeException {
+    public void setUp() throws TbNodeException {
         node = new TbSendRestApiCallReplyNode();
         config = new TbSendRestApiCallReplyNodeConfiguration().defaultConfiguration();
         var configuration = new TbNodeConfiguration(JacksonUtil.valueToTree(config));
@@ -80,6 +80,7 @@ public class TbSendRestApiCallReplyNodeTest {
         node.init(ctxMock, configuration);
         when(ctxMock.getRpcService()).thenReturn(rpcServiceMock);
         String requestUUIDStr = "80b7883b-7ec6-4872-9dd3-b2afd5660fa6";
+        String serviceIdStr = "tb-core-0";
         String data = """
                 {
                 "temperature": 23,
@@ -87,13 +88,13 @@ public class TbSendRestApiCallReplyNodeTest {
                 """;
         Map<String, String> metadata = Map.of(
                 requestIdAttribute, requestUUIDStr,
-                serviceIdAttribute, "tb-core-0");
+                serviceIdAttribute, serviceIdStr);
         TbMsg msg = TbMsg.newMsg(TbMsgType.REST_API_REQUEST, DEVICE_ID, new TbMsgMetaData(metadata), data);
 
         node.onMsg(ctxMock, msg);
 
         UUID requestUUID = UUID.fromString(requestUUIDStr);
-        verify(rpcServiceMock).sendRestApiCallReply("tb-core-0", requestUUID, msg);
+        verify(rpcServiceMock).sendRestApiCallReply(serviceIdStr, requestUUID, msg);
         verify(ctxMock).tellSuccess(msg);
     }
 
@@ -105,28 +106,28 @@ public class TbSendRestApiCallReplyNodeTest {
         );
     }
 
-    @Test
-    public void givenRequestIdIsNotPresent_whenOnMsg_thenTellFailure() {
-        TbMsg msg = TbMsg.newMsg(TbMsgType.REST_API_REQUEST, DEVICE_ID, TbMsgMetaData.EMPTY, TbMsg.EMPTY_STRING);
+    @ParameterizedTest
+    @MethodSource
+    public void givenInvalidRequest_whenOnMsg_thenTellFailure(TbMsgMetaData metaData, String data, String errorMsg) {
+        TbMsg msg = TbMsg.newMsg(TbMsgType.REST_API_REQUEST, DEVICE_ID, metaData, data);
 
         node.onMsg(ctxMock, msg);
 
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
         verify(ctxMock).tellFailure(eq(msg), captor.capture());
         Throwable throwable = captor.getValue();
-        assertThat(throwable).isInstanceOf(RuntimeException.class).hasMessage("Request id is not present in the metadata!");
+        assertThat(throwable).isInstanceOf(RuntimeException.class).hasMessage(errorMsg);
     }
 
-    @Test
-    public void givenRequestBodyIsEmpty_whenOnMsg_thenTellFailure() {
-        Map<String, String> metadata = Map.of("requestUUID", "80b7883b-7ec6-4872-9dd3-b2afd5660fa6");
-        TbMsg msg = TbMsg.newMsg(TbMsgType.REST_API_REQUEST, DEVICE_ID, new TbMsgMetaData(metadata), TbMsg.EMPTY_STRING);
-
-        node.onMsg(ctxMock, msg);
-
-        ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
-        verify(ctxMock).tellFailure(eq(msg), captor.capture());
-        Throwable throwable = captor.getValue();
-        assertThat(throwable).isInstanceOf(RuntimeException.class).hasMessage("Request body is empty!");
+    private static Stream<Arguments> givenInvalidRequest_whenOnMsg_thenTellFailure() {
+        return Stream.of(
+                Arguments.of(TbMsgMetaData.EMPTY, TbMsg.EMPTY_STRING, "Request id is not present in the metadata!"),
+                Arguments.of(new TbMsgMetaData(Map.of("requestUUID", "e1dd3985-efad-45a0-b0d2-0ff5dff2ccac")),
+                        TbMsg.EMPTY_STRING, "Service id is not present in the metadata!"),
+                Arguments.of(new TbMsgMetaData(Map.of("serviceId", "tb-core-0")),
+                        TbMsg.EMPTY_STRING, "Request id is not present in the metadata!"),
+                Arguments.of(new TbMsgMetaData(Map.of("requestUUID", "e1dd3985-efad-45a0-b0d2-0ff5dff2ccac", "serviceId", "tb-core-0")),
+                        TbMsg.EMPTY_STRING, "Request body is empty!")
+        );
     }
 }

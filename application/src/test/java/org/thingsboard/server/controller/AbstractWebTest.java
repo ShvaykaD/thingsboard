@@ -24,7 +24,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Header;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
-import lombok.Data;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpStatus;
 import org.awaitility.Awaitility;
@@ -77,6 +77,7 @@ import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.DeviceProfile;
 import org.thingsboard.server.common.data.DeviceProfileType;
 import org.thingsboard.server.common.data.DeviceTransportType;
+import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.SaveDeviceWithCredentialsRequest;
 import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.Tenant;
@@ -99,6 +100,7 @@ import org.thingsboard.server.common.data.exception.ThingsboardException;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.EntityId;
+import org.thingsboard.server.common.data.id.EntityIdFactory;
 import org.thingsboard.server.common.data.id.HasId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.id.TenantProfileId;
@@ -215,6 +217,8 @@ public abstract class AbstractWebTest extends AbstractInMemoryStorageTest {
 
     protected UserId differentTenantCustomerUserId;
 
+    protected UserId sysAdminUserId;
+
     @SuppressWarnings("rawtypes")
     private HttpMessageConverter mappingJackson2HttpMessageConverter;
 
@@ -270,9 +274,9 @@ public abstract class AbstractWebTest extends AbstractInMemoryStorageTest {
                 this.mappingJackson2HttpMessageConverter);
     }
 
-    @BeforeClass
-    public static void beforeClass() throws Exception {
-
+    @PostConstruct
+    public void setSysAdminUserId() {
+        sysAdminUserId =
     }
 
     @Before
@@ -286,6 +290,7 @@ public abstract class AbstractWebTest extends AbstractInMemoryStorageTest {
                     .apply(springSecurity()).build();
         }
         loginSysAdmin();
+
 
         Tenant tenant = new Tenant();
         tenant.setTitle(TEST_TENANT_NAME);
@@ -638,6 +643,12 @@ public abstract class AbstractWebTest extends AbstractInMemoryStorageTest {
         deviceData.setConfiguration(new DefaultDeviceConfiguration());
         device.setDeviceData(deviceData);
         return doPost("/api/device?accessToken=" + accessToken, device, Device.class);
+    }
+
+    protected Device assignDeviceToCustomer(String name, String accessToken, CustomerId customerId) throws Exception {
+        Device device = createDevice(name, accessToken);
+        String deviceIdStr = String.valueOf(device.getId().getId());
+        return doPost("/api/customer/" + customerId.getId() + "/device/" + deviceIdStr, device, Device.class);
     }
 
     protected MqttDeviceProfileTransportConfiguration createMqttDeviceProfileTransportConfiguration(TransportPayloadTypeConfiguration transportPayloadTypeConfiguration, boolean sendAckOnValidationException) {

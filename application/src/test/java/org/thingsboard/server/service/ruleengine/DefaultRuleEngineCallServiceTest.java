@@ -30,7 +30,6 @@ import org.thingsboard.server.common.data.msg.TbMsgType;
 import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.msg.TbMsgMetaData;
 import org.thingsboard.server.common.msg.queue.TbCallback;
-import org.thingsboard.server.dao.audit.AuditLogService;
 import org.thingsboard.server.gen.transport.TransportProtos;
 
 import java.util.HashMap;
@@ -45,8 +44,6 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 
@@ -59,8 +56,6 @@ public class DefaultRuleEngineCallServiceTest {
 
     @Mock
     private TbClusterService tbClusterServiceMock;
-    @Mock
-    private AuditLogService auditLogServiceMock;
 
     private DefaultRuleEngineCallService ruleEngineCallService;
     private ScheduledExecutorService executor;
@@ -91,19 +86,20 @@ public class DefaultRuleEngineCallServiceTest {
 
     @Test
     void givenRequest_whenProcessRestApiCallToRuleEngine_thenPushMsgToRuleEngine() {
-        long timeout = 10000L;
+        long timeout = 100L;
         long expTime = System.currentTimeMillis() + timeout;
         HashMap<String, String> metaData = new HashMap<>();
         UUID requestId = UUID.randomUUID();
         metaData.put("serviceId", "core");
         metaData.put("requestUUID", requestId.toString());
         metaData.put("expirationTime", Long.toString(expTime));
-        TbMsg msg = TbMsg.newMsg("main", TbMsgType.REST_API_REQUEST, TENANT_ID, null, new TbMsgMetaData(metaData), "{\"key\":\"value\"}");
-        ruleEngineCallService.processRestApiCallToRuleEngine(TENANT_ID, requestId, msg, true, TbMsg::getData);
+        TbMsg msg = TbMsg.newMsg("main", TbMsgType.REST_API_REQUEST, TENANT_ID, new TbMsgMetaData(metaData), "{\"key\":\"value\"}");
+        Consumer<TbMsg> anyConsumer = TbMsg::getData;
+        ruleEngineCallService.processRestApiCallToRuleEngine(TENANT_ID, requestId, msg, true, anyConsumer);
 
         assertThat(requests.size()).isEqualTo(1);
-        assertThat(requests.containsKey(requestId)).isTrue();
-        verify(tbClusterServiceMock).pushMsgToRuleEngine(eq(TENANT_ID), eq(TENANT_ID), eq(msg), eq(true), isNull());
+        assertThat(requests.get(requestId)).isEqualTo(anyConsumer);
+        verify(tbClusterServiceMock).pushMsgToRuleEngine(TENANT_ID, TENANT_ID, msg, true, null);
     }
 
     @Test
@@ -115,18 +111,19 @@ public class DefaultRuleEngineCallServiceTest {
         metaData.put("serviceId", "core");
         metaData.put("requestUUID", requestId.toString());
         metaData.put("expirationTime", Long.toString(expTime));
-        TbMsg msg = TbMsg.newMsg("main", TbMsgType.REST_API_REQUEST, TENANT_ID, null, new TbMsgMetaData(metaData), "{\"key\":\"value\"}");
+        TbMsg msg = TbMsg.newMsg("main", TbMsgType.REST_API_REQUEST, TENANT_ID, new TbMsgMetaData(metaData), "{\"key\":\"value\"}");
 
+        Consumer<TbMsg> anyConsumer = TbMsg::getData;
         doAnswer(invocation -> {
-            //check the presence of request in the map after put()
+            //check the presence of request in the map after pushMsgToRuleEngine()
             assertThat(requests.size()).isEqualTo(1);
+            assertThat(requests.get(requestId)).isEqualTo(anyConsumer);
             return null;
         }).when(tbClusterServiceMock).pushMsgToRuleEngine(any(), any(), any(), anyBoolean(), any());
-        ruleEngineCallService.processRestApiCallToRuleEngine(TENANT_ID, requestId, msg, true, TbMsg::getData);
+        ruleEngineCallService.processRestApiCallToRuleEngine(TENANT_ID, requestId, msg, true, anyConsumer);
 
-        verify(tbClusterServiceMock).pushMsgToRuleEngine(eq(TENANT_ID), eq(TENANT_ID), eq(msg), eq(true), isNull());
+        verify(tbClusterServiceMock).pushMsgToRuleEngine(TENANT_ID, TENANT_ID, msg, true, null);
         //check map is empty after scheduleTimeout()
-        assertThat(requests.size()).isEqualTo(0);
         Awaitility.await("Await until request was deleted from map due to timeout")
                 .pollDelay(25, TimeUnit.MILLISECONDS)
                 .atMost(10, TimeUnit.SECONDS)
@@ -142,43 +139,21 @@ public class DefaultRuleEngineCallServiceTest {
         metaData.put("serviceId", "core");
         metaData.put("requestUUID", requestId.toString());
         metaData.put("expirationTime", Long.toString(expTime));
-        TbMsg msg = TbMsg.newMsg("main", TbMsgType.REST_API_REQUEST, TENANT_ID, null, new TbMsgMetaData(metaData), "{\"key\":\"value\"}");
+        TbMsg msg = TbMsg.newMsg("main", TbMsgType.REST_API_REQUEST, TENANT_ID, new TbMsgMetaData(metaData), "{\"key\":\"value\"}");
 
+        Consumer<TbMsg> anyConsumer = TbMsg::getData;
         doAnswer(invocation -> {
-            //check the presence of request in the map after put()
+            //check the presence of request in the map after pushMsgToRuleEngine()
             assertThat(requests.size()).isEqualTo(1);
+            assertThat(requests.get(requestId)).isEqualTo(anyConsumer);
             ruleEngineCallService.onQueueMsg(getResponse(requestId, msg), TbCallback.EMPTY);
             //check map is empty after onQueueMsg()
             assertThat(requests.size()).isEqualTo(0);
             return null;
         }).when(tbClusterServiceMock).pushMsgToRuleEngine(any(), any(), any(), anyBoolean(), any());
-        ruleEngineCallService.processRestApiCallToRuleEngine(TENANT_ID, requestId, msg, true, TbMsg::getData);
+        ruleEngineCallService.processRestApiCallToRuleEngine(TENANT_ID, requestId, msg, true, anyConsumer);
 
-        verify(tbClusterServiceMock).pushMsgToRuleEngine(eq(TENANT_ID), eq(TENANT_ID), eq(msg), eq(true), isNull());
-    }
-
-    @Test
-    void name() {
-        long timeout = 10000L;
-        long expTime = System.currentTimeMillis() + timeout;
-        HashMap<String, String> metaData = new HashMap<>();
-        UUID requestId = UUID.randomUUID();
-        metaData.put("serviceId", "core");
-        metaData.put("requestUUID", requestId.toString());
-        metaData.put("expirationTime", Long.toString(expTime));
-        TbMsg msg = TbMsg.newMsg("main", TbMsgType.REST_API_REQUEST, TENANT_ID, null, new TbMsgMetaData(metaData), "{\"key\":\"value\"}");
-
-        doAnswer(invocation -> {
-            //check the presence of request in the map after put()
-            assertThat(requests.size()).isEqualTo(1);
-            ruleEngineCallService.onQueueMsg(getResponse(requestId, msg), TbCallback.EMPTY);
-            //check map is empty after onQueueMsg()
-            assertThat(requests.size()).isEqualTo(0);
-            return null;
-        }).when(tbClusterServiceMock).pushMsgToRuleEngine(any(), any(), any(), anyBoolean(), any());
-        ruleEngineCallService.processRestApiCallToRuleEngine(TENANT_ID, requestId, msg, true, TbMsg::getData);
-
-        verify(tbClusterServiceMock).pushMsgToRuleEngine(eq(TENANT_ID), eq(TENANT_ID), eq(msg), eq(true), isNull());
+        verify(tbClusterServiceMock).pushMsgToRuleEngine(TENANT_ID, TENANT_ID, msg, true, null);
     }
 
     private TransportProtos.RestApiCallResponseMsgProto getResponse(UUID requestId, TbMsg msg) {
