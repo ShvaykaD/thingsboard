@@ -17,11 +17,10 @@ package org.thingsboard.server.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Header;
-import io.jsonwebtoken.Jwt;
-import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.Jws;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +37,7 @@ import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.msg.TbMsgMetaData;
 import org.thingsboard.server.dao.service.DaoSqlTest;
 import org.thingsboard.server.service.ruleengine.RuleEngineCallService;
+import org.thingsboard.server.service.security.model.token.JwtTokenFactory;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -62,6 +62,9 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
 
     @SpyBean
     private RuleEngineCallService ruleEngineCallService;
+
+    @Autowired
+    private JwtTokenFactory jwtTokenFactory;
 
     @Test
     public void testHandleRuleEngineRequestWithMsgOriginatorUser() throws Exception {
@@ -241,10 +244,8 @@ public class RuleEngineControllerTest extends AbstractControllerTest {
     }
 
     private UserId getCurrentUserId() {
-        int i = token.lastIndexOf('.');
-        String withoutSignature = token.substring(0, i + 1);
-        Jwt<Header, Claims> jwsClaims = Jwts.parser().parseClaimsJwt(withoutSignature);
-        Claims claims = jwsClaims.getBody();
+        Jws<Claims> jwsClaims = jwtTokenFactory.parseTokenClaims(token);
+        Claims claims = jwsClaims.getPayload();
         String userId = claims.get("userId", String.class);
         return UserId.fromString(userId);
     }
