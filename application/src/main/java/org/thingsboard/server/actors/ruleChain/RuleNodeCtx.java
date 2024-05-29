@@ -26,9 +26,10 @@ import org.thingsboard.server.common.data.rule.RuleNode;
  */
 @Data
 @AllArgsConstructor
-final class RuleNodeCtx {
+public final class RuleNodeCtx {
     private final TenantId tenantId;
     private final TbActorRef chainActor;
     private final TbActorRef selfActor;
     private RuleNode self;
+    private boolean debugRuleNodeFailures;
 }

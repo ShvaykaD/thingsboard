@@ -128,7 +128,7 @@ import static org.thingsboard.server.common.data.msg.TbMsgType.ENTITY_CREATED;
  * Created by ashvayka on 19.03.18.
  */
 @Slf4j
-class DefaultTbContext implements TbContext {
+public class DefaultTbContext implements TbContext {
 
     private final ActorSystemContext mainCtx;
     private final String ruleChainName;
@@ -156,8 +156,12 @@ class DefaultTbContext implements TbContext {
     }
 
     private void tellNext(TbMsg msg, Set<String> relationTypes, Throwable th) {
-        if (nodeCtx.getSelf().isDebugMode()) {
+        boolean debugMode = nodeCtx.getSelf().isDebugMode();
+        if (debugMode) {
             relationTypes.forEach(relationType -> mainCtx.persistDebugOutput(nodeCtx.getTenantId(), nodeCtx.getSelf().getId(), msg, relationType, th));
+        }
+        if (!debugMode && nodeCtx.isDebugRuleNodeFailures() && relationTypes.contains(TbNodeConnectionType.FAILURE)) {
+            mainCtx.persistDebugOutput(nodeCtx.getTenantId(), nodeCtx.getSelf().getId(), msg, TbNodeConnectionType.FAILURE, th);
         }
         msg.getCallback().onProcessingEnd(nodeCtx.getSelf().getId());
         nodeCtx.getChainActor().tell(new RuleNodeToRuleChainTellNextMsg(nodeCtx.getSelf().getRuleChainId(), nodeCtx.getSelf().getId(), relationTypes, msg, th != null ? th.getMessage() : null));
@@ -181,7 +185,8 @@ class DefaultTbContext implements TbContext {
         if (item == null) {
             ack(msg);
         } else {
-            if (nodeCtx.getSelf().isDebugMode()) {
+            if (nodeCtx.getSelf().isDebugMode() ||
+                nodeCtx.isDebugRuleNodeFailures() && TbNodeConnectionType.FAILURE.equals(relationType)) {
                 mainCtx.persistDebugOutput(nodeCtx.getTenantId(), nodeCtx.getSelf().getId(), msg, relationType);
             }
             nodeCtx.getChainActor().tell(new RuleChainOutputMsg(item.getRuleChainId(), item.getRuleNodeId(), relationType, msg));
@@ -309,9 +314,13 @@ class DefaultTbContext implements TbContext {
         if (failureMessage != null) {
             msg.setFailureMessage(failureMessage);
         }
-        if (nodeCtx.getSelf().isDebugMode()) {
+        boolean debugMode = nodeCtx.getSelf().isDebugMode();
+        if (debugMode) {
             relationTypes.forEach(relationType ->
                     mainCtx.persistDebugOutput(nodeCtx.getTenantId(), nodeCtx.getSelf().getId(), tbMsg, relationType, null, failureMessage));
+        }
+        if (!debugMode && nodeCtx.isDebugRuleNodeFailures() && relationTypes.contains(TbNodeConnectionType.FAILURE)) {
+            mainCtx.persistDebugOutput(nodeCtx.getTenantId(), nodeCtx.getSelf().getId(), tbMsg, TbNodeConnectionType.FAILURE, null, failureMessage);
         }
         mainCtx.getClusterService().pushMsgToRuleEngine(tpi, tbMsg.getId(), msg.build(), new SimpleTbQueueCallback(
                 metadata -> {
@@ -348,7 +357,7 @@ class DefaultTbContext implements TbContext {
 
     @Override
     public void tellFailure(TbMsg msg, Throwable th) {
-        if (nodeCtx.getSelf().isDebugMode()) {
+        if (nodeCtx.getSelf().isDebugMode() || nodeCtx.isDebugRuleNodeFailures()) {
             mainCtx.persistDebugOutput(nodeCtx.getTenantId(), nodeCtx.getSelf().getId(), msg, TbNodeConnectionType.FAILURE, th);
         }
         String failureMessage = getFailureMessage(th);

@@ -50,13 +50,14 @@ public class RuleNodeActorMessageProcessor extends ComponentMsgProcessor<RuleNod
     private TbNode tbNode;
     private RuleNodeInfo info;
 
-    RuleNodeActorMessageProcessor(TenantId tenantId, String ruleChainName, RuleNodeId ruleNodeId, ActorSystemContext systemContext
-            , TbActorRef parent, TbActorRef self) {
+    RuleNodeActorMessageProcessor(TenantId tenantId, String ruleChainName, RuleNodeId ruleNodeId,
+                                  ActorSystemContext systemContext, TbActorRef parent,
+                                  TbActorRef self, boolean debugRuleNodeFailures) {
         super(systemContext, tenantId, ruleNodeId);
         this.apiUsageClient = systemContext.getApiUsageClient();
         this.ruleChainName = ruleChainName;
         this.ruleNode = systemContext.getRuleChainService().findRuleNodeById(tenantId, entityId);
-        this.defaultCtx = new DefaultTbContext(systemContext, ruleChainName, new RuleNodeCtx(tenantId, parent, self, ruleNode));
+        this.defaultCtx = new DefaultTbContext(systemContext, ruleChainName, new RuleNodeCtx(tenantId, parent, self, ruleNode, debugRuleNodeFailures));
         this.info = new RuleNodeInfo(ruleNodeId, ruleChainName, ruleNode != null ? ruleNode.getName() : "Unknown");
     }
 
