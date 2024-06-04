@@ -98,7 +98,10 @@ public class DefaultTbContextTest {
         ruleNode.setDebugMode(defaultDebugMode);
 
         boolean persistDebugOutput = defaultDebugMode || debugRuleNodeFailures;
-        if (persistDebugOutput) {
+        boolean failure = relationTypes.contains(TbNodeConnectionType.FAILURE);
+        boolean failureAndDebugFailuresIsEnabled = debugRuleNodeFailures && failure;
+
+        if (defaultDebugMode || failureAndDebugFailuresIsEnabled) {
             given(nodeCtxMock.getTenantId()).willReturn(TENANT_ID);
         }
         if (!defaultDebugMode) {
@@ -111,8 +114,6 @@ public class DefaultTbContextTest {
         defaultTbContext.tellNext(msg, relationTypes);
 
         // THEN
-        then(nodeCtxMock).should().getChainActor();
-        then(nodeCtxMock).shouldHaveNoMoreInteractions();
         var expectedRuleNodeToRuleChainTellNextMsg = new RuleNodeToRuleChainTellNextMsg(
                 RULE_CHAIN_ID,
                 RULE_NODE_ID,
@@ -123,19 +124,33 @@ public class DefaultTbContextTest {
         then(chainActorMock).shouldHaveNoMoreInteractions();
         then(callbackMock).should().onProcessingEnd(RULE_NODE_ID);
         then(callbackMock).shouldHaveNoMoreInteractions();
+        then(nodeCtxMock).should().getChainActor();
+
+        if (!persistDebugOutput) {
+            then(nodeCtxMock).shouldHaveNoMoreInteractions();
+            then(mainCtxMock).shouldHaveNoInteractions();
+            return;
+        }
 
         if (defaultDebugMode) {
             relationTypes.forEach(relationType ->
                     then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, relationType, null)
             );
             then(mainCtxMock).shouldHaveNoMoreInteractions();
+            then(nodeCtxMock).shouldHaveNoMoreInteractions();
             return;
         }
-        if (debugRuleNodeFailures && relationTypes.contains(TbNodeConnectionType.FAILURE)) {
+
+        if (failure) {
+            then(nodeCtxMock).should().onFailure(msg.getId());
+            then(nodeCtxMock).shouldHaveNoMoreInteractions();
             then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, TbNodeConnectionType.FAILURE, null);
             then(mainCtxMock).shouldHaveNoMoreInteractions();
             return;
         }
+
+        then(nodeCtxMock).should().onSuccess(msg.getId());
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
         then(mainCtxMock).shouldHaveNoInteractions();
     }
 
@@ -150,9 +165,18 @@ public class DefaultTbContextTest {
         ruleNode.setDebugMode(defaultDebugMode);
 
         given(msgMock.popFormStack()).willReturn(new TbMsgProcessingStackItem(RULE_CHAIN_ID, RULE_NODE_ID));
-        boolean hasFailureAndDebugFailuresIsEnabled = debugRuleNodeFailures
-                                                      && TbNodeConnectionType.FAILURE.equals(connectionType);
-        if (defaultDebugMode || hasFailureAndDebugFailuresIsEnabled) {
+
+        boolean persistDebugOutput = defaultDebugMode || debugRuleNodeFailures;
+        boolean failure = TbNodeConnectionType.FAILURE.equals(connectionType);
+        boolean failureAndDebugFailuresIsEnabled = debugRuleNodeFailures && failure;
+
+        var msgId = (UUID) null;
+        if (debugRuleNodeFailures) {
+            msgId = UUID.fromString("8a47dc79-47b2-4987-9186-9498b3c0add7");
+            given(msgMock.getId()).willReturn(msgId);
+        }
+
+        if (defaultDebugMode || failureAndDebugFailuresIsEnabled) {
             given(nodeCtxMock.getTenantId()).willReturn(TENANT_ID);
         }
         if (!defaultDebugMode) {
@@ -166,8 +190,6 @@ public class DefaultTbContextTest {
 
         // THEN
         then(msgMock).should().popFormStack();
-        then(nodeCtxMock).should().getChainActor();
-        then(nodeCtxMock).shouldHaveNoMoreInteractions();
         var expectedRuleChainOutputMsg = new RuleChainOutputMsg(
                 RULE_CHAIN_ID,
                 RULE_NODE_ID,
@@ -175,17 +197,33 @@ public class DefaultTbContextTest {
                 msgMock);
         then(chainActorMock).should().tell(expectedRuleChainOutputMsg);
         then(chainActorMock).shouldHaveNoMoreInteractions();
+        then(nodeCtxMock).should().getChainActor();
+
+        if (!persistDebugOutput) {
+            then(nodeCtxMock).shouldHaveNoMoreInteractions();
+            then(mainCtxMock).shouldHaveNoInteractions();
+            return;
+        }
 
         if (defaultDebugMode) {
             then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msgMock, connectionType);
             then(mainCtxMock).shouldHaveNoMoreInteractions();
+            then(nodeCtxMock).shouldHaveNoMoreInteractions();
             return;
         }
-        if (hasFailureAndDebugFailuresIsEnabled) {
+
+        if (failure) {
             then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msgMock, connectionType);
             then(mainCtxMock).shouldHaveNoMoreInteractions();
+            assertThat(msgId).isNotNull();
+            then(nodeCtxMock).should().onFailure(msgId);
+            then(nodeCtxMock).shouldHaveNoMoreInteractions();
             return;
         }
+
+        assertThat(msgId).isNotNull();
+        then(nodeCtxMock).should().onSuccess(msgId);
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
         then(mainCtxMock).shouldHaveNoInteractions();
     }
 
@@ -245,6 +283,25 @@ public class DefaultTbContextTest {
         // THEN
         then(mainCtxMock).should().resolve(ServiceType.TB_RULE_ENGINE, DataConstants.MAIN_QUEUE_NAME, TENANT_ID, TENANT_ID);
         TbMsg expectedTbMsg = TbMsg.newMsg(msg, msg.getQueueName(), RULE_CHAIN_ID, RULE_NODE_ID);
+
+        ArgumentCaptor<ToRuleEngineMsg> toRuleEngineMsgCaptor = ArgumentCaptor.forClass(ToRuleEngineMsg.class);
+        ArgumentCaptor<SimpleTbQueueCallback> simpleTbQueueCallbackCaptor = ArgumentCaptor.forClass(SimpleTbQueueCallback.class);
+        then(tbClusterServiceMock).should().pushMsgToRuleEngine(eq(tpi), notNull(UUID.class), toRuleEngineMsgCaptor.capture(), simpleTbQueueCallbackCaptor.capture());
+
+        ToRuleEngineMsg actualToRuleEngineMsg = toRuleEngineMsgCaptor.getValue();
+        assertThat(actualToRuleEngineMsg).usingRecursiveComparison()
+                .ignoringFields("tbMsg_")
+                .isEqualTo(TransportProtos.ToRuleEngineMsg.newBuilder()
+                        .setTenantIdMSB(TENANT_ID.getId().getMostSignificantBits())
+                        .setTenantIdLSB(TENANT_ID.getId().getLeastSignificantBits())
+                        .setTbMsg(TbMsg.toByteString(expectedTbMsg))
+                        .setFailureMessage(EXCEPTION_MSG)
+                        .addAllRelationTypes(List.of(TbNodeConnectionType.FAILURE)).build());
+
+        var simpleTbQueueCallback = simpleTbQueueCallbackCaptor.getValue();
+        assertThat(simpleTbQueueCallback).isNotNull();
+        simpleTbQueueCallback.onSuccess(null);
+
         if (defaultDebugMode || debugRuleNodeFailures) {
             ArgumentCaptor<TbMsg> tbMsgCaptor = ArgumentCaptor.forClass(TbMsg.class);
             then(mainCtxMock).should().persistDebugOutput(eq(TENANT_ID), eq(RULE_NODE_ID), tbMsgCaptor.capture(), eq(TbNodeConnectionType.FAILURE), isNull(), eq(EXCEPTION_MSG));
@@ -255,18 +312,6 @@ public class DefaultTbContextTest {
         }
         then(mainCtxMock).should().getClusterService();
         then(mainCtxMock).shouldHaveNoMoreInteractions();
-
-        ArgumentCaptor<ToRuleEngineMsg> toRuleEngineMsgCaptor = ArgumentCaptor.forClass(ToRuleEngineMsg.class);
-        then(tbClusterServiceMock).should().pushMsgToRuleEngine(eq(tpi), notNull(UUID.class), toRuleEngineMsgCaptor.capture(), notNull(SimpleTbQueueCallback.class));
-        ToRuleEngineMsg actualToRuleEngineMsg = toRuleEngineMsgCaptor.getValue();
-        assertThat(actualToRuleEngineMsg).usingRecursiveComparison()
-                .ignoringFields("tbMsg_")
-                .isEqualTo(TransportProtos.ToRuleEngineMsg.newBuilder()
-                        .setTenantIdMSB(TENANT_ID.getId().getMostSignificantBits())
-                        .setTenantIdLSB(TENANT_ID.getId().getLeastSignificantBits())
-                        .setTbMsg(TbMsg.toByteString(expectedTbMsg))
-                        .setFailureMessage(EXCEPTION_MSG)
-                        .addAllRelationTypes(List.of(TbNodeConnectionType.FAILURE)).build());
         then(tbClusterServiceMock).shouldHaveNoMoreInteractions();
     }
 
@@ -296,6 +341,24 @@ public class DefaultTbContextTest {
         // THEN
         then(mainCtxMock).should().resolve(ServiceType.TB_RULE_ENGINE, DataConstants.MAIN_QUEUE_NAME, TENANT_ID, TENANT_ID);
         TbMsg expectedTbMsg = TbMsg.newMsg(msg, msg.getQueueName(), RULE_CHAIN_ID, RULE_NODE_ID);
+
+        ArgumentCaptor<ToRuleEngineMsg> toRuleEngineMsgCaptor = ArgumentCaptor.forClass(ToRuleEngineMsg.class);
+        ArgumentCaptor<SimpleTbQueueCallback> simpleTbQueueCallbackCaptor = ArgumentCaptor.forClass(SimpleTbQueueCallback.class);
+        then(tbClusterServiceMock).should().pushMsgToRuleEngine(eq(tpi), notNull(UUID.class), toRuleEngineMsgCaptor.capture(), simpleTbQueueCallbackCaptor.capture());
+
+        ToRuleEngineMsg actualToRuleEngineMsg = toRuleEngineMsgCaptor.getValue();
+        assertThat(actualToRuleEngineMsg).usingRecursiveComparison()
+                .ignoringFields("tbMsg_")
+                .isEqualTo(TransportProtos.ToRuleEngineMsg.newBuilder()
+                        .setTenantIdMSB(TENANT_ID.getId().getMostSignificantBits())
+                        .setTenantIdLSB(TENANT_ID.getId().getLeastSignificantBits())
+                        .setTbMsg(TbMsg.toByteString(expectedTbMsg))
+                        .addAllRelationTypes(List.of(connectionType)).build());
+
+        var simpleTbQueueCallback = simpleTbQueueCallbackCaptor.getValue();
+        assertThat(simpleTbQueueCallback).isNotNull();
+        simpleTbQueueCallback.onSuccess(null);
+
         if (defaultDebugMode) {
             ArgumentCaptor<TbMsg> tbMsgCaptor = ArgumentCaptor.forClass(TbMsg.class);
             then(mainCtxMock).should().persistDebugOutput(eq(TENANT_ID), eq(RULE_NODE_ID), tbMsgCaptor.capture(), eq(connectionType), isNull(), isNull());
@@ -306,17 +369,6 @@ public class DefaultTbContextTest {
         }
         then(mainCtxMock).should().getClusterService();
         then(mainCtxMock).shouldHaveNoMoreInteractions();
-
-        ArgumentCaptor<ToRuleEngineMsg> toRuleEngineMsgCaptor = ArgumentCaptor.forClass(ToRuleEngineMsg.class);
-        then(tbClusterServiceMock).should().pushMsgToRuleEngine(eq(tpi), notNull(UUID.class), toRuleEngineMsgCaptor.capture(), notNull(SimpleTbQueueCallback.class));
-        ToRuleEngineMsg actualToRuleEngineMsg = toRuleEngineMsgCaptor.getValue();
-        assertThat(actualToRuleEngineMsg).usingRecursiveComparison()
-                .ignoringFields("tbMsg_")
-                .isEqualTo(TransportProtos.ToRuleEngineMsg.newBuilder()
-                        .setTenantIdMSB(TENANT_ID.getId().getMostSignificantBits())
-                        .setTenantIdLSB(TENANT_ID.getId().getLeastSignificantBits())
-                        .setTbMsg(TbMsg.toByteString(expectedTbMsg))
-                        .addAllRelationTypes(List.of(connectionType)).build());
         then(tbClusterServiceMock).shouldHaveNoMoreInteractions();
     }
 
@@ -373,8 +425,6 @@ public class DefaultTbContextTest {
         defaultTbContext.tellFailure(msg, EXCEPTION);
 
         // THEN
-        then(nodeCtxMock).should().getChainActor();
-        then(nodeCtxMock).shouldHaveNoMoreInteractions();
         var expectedRuleNodeToRuleChainTellNextMsg = new RuleNodeToRuleChainTellNextMsg(
                 RULE_CHAIN_ID,
                 RULE_NODE_ID,
@@ -384,19 +434,32 @@ public class DefaultTbContextTest {
         );
         then(chainActorMock).should().tell(expectedRuleNodeToRuleChainTellNextMsg);
         then(chainActorMock).shouldHaveNoMoreInteractions();
+        then(nodeCtxMock).should().getChainActor();
 
-        if (persistDebugOutput) {
-            then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, TbNodeConnectionType.FAILURE, EXCEPTION);
-            then(mainCtxMock).shouldHaveNoMoreInteractions();
+        if (!persistDebugOutput) {
+            then(nodeCtxMock).shouldHaveNoMoreInteractions();
+            then(mainCtxMock).shouldHaveNoInteractions();
             return;
         }
-        then(mainCtxMock).shouldHaveNoInteractions();
+
+        if (defaultDebugMode) {
+            then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, TbNodeConnectionType.FAILURE, EXCEPTION);
+            then(mainCtxMock).shouldHaveNoMoreInteractions();
+            then(nodeCtxMock).shouldHaveNoMoreInteractions();
+            return;
+        }
+
+        then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, TbNodeConnectionType.FAILURE, EXCEPTION);
+        then(mainCtxMock).shouldHaveNoMoreInteractions();
+        then(nodeCtxMock).should().onFailure(msg.getId());
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
     }
 
     private static Stream<Arguments> givenDebugModeOptionsAndTbNodeConnectionsSet_whenTellNext_thenVerify() {
         return Stream.of(
                 Arguments.of(true, false, Set.of(TbNodeConnectionType.FAILURE, TbNodeConnectionType.OTHER)),
                 Arguments.of(false, true, Set.of(TbNodeConnectionType.FAILURE, TbNodeConnectionType.FALSE)),
+                Arguments.of(false, true, Set.of(TbNodeConnectionType.OTHER, TbNodeConnectionType.TRUE)),
                 Arguments.of(false, false, Set.of(TbNodeConnectionType.FAILURE, TbNodeConnectionType.TRUE)),
                 Arguments.of(true, false, Set.of(TbNodeConnectionType.SUCCESS))
         );
