@@ -1,12 +1,12 @@
 /**
  * Copyright © 2016-2024 The Thingsboard Authors
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -70,6 +70,8 @@ import static org.mockito.Mockito.times;
 @ExtendWith(MockitoExtension.class)
 public class DefaultTbContextTest {
 
+    private final Set<String> NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS = Set.of("NON-FAILURE", TbNodeConnectionType.FAILURE);
+
     private final String EXCEPTION_MSG = "Some runtime exception!";
     private final RuntimeException EXCEPTION = new RuntimeException(EXCEPTION_MSG);
 
@@ -85,6 +87,232 @@ public class DefaultTbContextTest {
     private TbActorRef chainActorMock;
     @InjectMocks
     private DefaultTbContext defaultTbContext;
+
+    @Test
+    public void givenDebugModeFalseAndDebugFailuresTrueAndFailureConnection_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(false);
+        given(nodeCtxMock.getTenantId()).willReturn(TENANT_ID);
+        given(nodeCtxMock.isDebugRuleNodeFailures()).willReturn(true);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, TbNodeConnectionType.FAILURE);
+
+        // THEN
+        then(nodeCtxMock).should().onFailure(msg.getId());
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, TbNodeConnectionType.FAILURE, null);
+        then(mainCtxMock).shouldHaveNoMoreInteractions();
+        checkTellNextCommonLogic(callbackMock, Set.of(TbNodeConnectionType.FAILURE), msg);
+    }
+
+    @Test
+    public void givenDebugModeFalseAndDebugFailuresTrueAndFailureAndNonFailureConnection_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(false);
+        given(nodeCtxMock.getTenantId()).willReturn(TENANT_ID);
+        given(nodeCtxMock.isDebugRuleNodeFailures()).willReturn(true);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS);
+
+        // THEN
+        then(nodeCtxMock).should().onFailure(msg.getId());
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, TbNodeConnectionType.FAILURE, null);
+        then(mainCtxMock).shouldHaveNoMoreInteractions();
+        checkTellNextCommonLogic(callbackMock, NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS, msg);
+    }
+
+    @Test
+    public void givenDebugModeFalseAndDebugFailuresTrueAndNonFailureConnectionOnly_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(false);
+        given(nodeCtxMock.isDebugRuleNodeFailures()).willReturn(true);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, "NON-FAILURE");
+
+        // THEN
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).should().onSuccess(msg.getId());
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        then(mainCtxMock).shouldHaveNoInteractions();
+        checkTellNextCommonLogic(callbackMock, Set.of("NON-FAILURE"), msg);
+    }
+
+    @Test
+    public void givenDebugModeFalseAndDebugFailuresFalseAndFailureConnection_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(false);
+        given(nodeCtxMock.isDebugRuleNodeFailures()).willReturn(false);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, TbNodeConnectionType.FAILURE);
+
+        // THEN
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        then(mainCtxMock).shouldHaveNoInteractions();
+        checkTellNextCommonLogic(callbackMock, Set.of(TbNodeConnectionType.FAILURE), msg);
+    }
+
+    @Test
+    public void givenDebugModeFalseAndDebugFailuresFalseAndFailureAndNonFailureConnection_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(false);
+        given(nodeCtxMock.isDebugRuleNodeFailures()).willReturn(false);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS);
+
+        // THEN
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        then(mainCtxMock).shouldHaveNoInteractions();
+        checkTellNextCommonLogic(callbackMock, NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS, msg);
+    }
+
+    @Test
+    public void givenDebugModeFalseAndDebugFailuresFalseAndNonFailureConnectionOnly_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(false);
+        given(nodeCtxMock.isDebugRuleNodeFailures()).willReturn(false);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, "NON_FAILURE");
+
+        // THEN
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        then(mainCtxMock).shouldHaveNoInteractions();
+        checkTellNextCommonLogic(callbackMock, Set.of("NON_FAILURE"), msg);
+    }
+
+    @Test
+    public void givenDebugModeTrueAndFailureConnection_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(true);
+        given(nodeCtxMock.getTenantId()).willReturn(TENANT_ID);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, TbNodeConnectionType.FAILURE);
+
+        // THEN
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, TbNodeConnectionType.FAILURE, null);
+        then(mainCtxMock).shouldHaveNoMoreInteractions();
+        checkTellNextCommonLogic(callbackMock, Set.of(TbNodeConnectionType.FAILURE), msg);
+    }
+
+    @Test
+    public void givenDebugModeTrueAndFailureAndNonFailureConnection_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(true);
+        given(nodeCtxMock.getTenantId()).willReturn(TENANT_ID);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS);
+
+        // THEN
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        var nodeConnectionsCaptor = ArgumentCaptor.forClass(String.class);
+        int wantedNumberOfInvocations = NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS.size();
+        then(mainCtxMock).should(times(wantedNumberOfInvocations)).persistDebugOutput(eq(TENANT_ID), eq(RULE_NODE_ID), eq(msg), nodeConnectionsCaptor.capture(), isNull(Throwable.class));
+        then(mainCtxMock).shouldHaveNoMoreInteractions();
+        assertThat(nodeConnectionsCaptor.getAllValues()).hasSize(wantedNumberOfInvocations);
+        assertThat(nodeConnectionsCaptor.getAllValues()).containsExactlyInAnyOrderElementsOf(NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS);
+        checkTellNextCommonLogic(callbackMock, NON_FAILURE_AND_FAILURE_NODE_CONNECTIONS, msg);
+    }
+
+    @Test
+    public void givenDebugModeTrueAndNonFailureConnectionOnly_whenTellNext_thenVerify() {
+        // GIVEN
+        var callbackMock = mock(TbMsgCallback.class);
+        var msg = getTbMsgWithCallback(callbackMock);
+        var ruleNode = new RuleNode(RULE_NODE_ID);
+        ruleNode.setRuleChainId(RULE_CHAIN_ID);
+        ruleNode.setDebugMode(true);
+        given(nodeCtxMock.getTenantId()).willReturn(TENANT_ID);
+        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
+        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
+
+        // WHEN
+        defaultTbContext.tellNext(msg, "NON_FAILURE");
+
+        // THEN
+        then(nodeCtxMock).should().getChainActor();
+        then(nodeCtxMock).shouldHaveNoMoreInteractions();
+        then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, "NON_FAILURE", null);
+        then(mainCtxMock).shouldHaveNoMoreInteractions();
+        checkTellNextCommonLogic(callbackMock, Set.of("NON_FAILURE"), msg);
+    }
+
+
+    private void checkTellNextCommonLogic(TbMsgCallback callbackMock, Set<String> nodeConnections, TbMsg msg) {
+        then(callbackMock).should().onProcessingEnd(RULE_NODE_ID);
+        then(callbackMock).shouldHaveNoMoreInteractions();
+        var expectedRuleNodeToRuleChainTellNextMsg = new RuleNodeToRuleChainTellNextMsg(
+                RULE_CHAIN_ID,
+                RULE_NODE_ID,
+                nodeConnections,
+                msg,
+                null);
+        then(chainActorMock).should().tell(expectedRuleNodeToRuleChainTellNextMsg);
+        then(chainActorMock).shouldHaveNoMoreInteractions();
+    }
 
     @MethodSource
     @ParameterizedTest
