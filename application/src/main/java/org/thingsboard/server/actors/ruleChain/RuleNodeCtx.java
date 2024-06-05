@@ -20,6 +20,7 @@ import org.thingsboard.server.actors.TbActorRef;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.rule.RuleNode;
 
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -48,28 +49,21 @@ public final class RuleNodeCtx {
     }
 
     public void subscribeForFailure(UUID msgId, Runnable onFailure) {
-        if (!debugRuleNodeFailures) {
-            return;
+        if (debugRuleNodeFailures) {
+            failureSubscribers.putIfAbsent(msgId, onFailure);
         }
-        failureSubscribers.putIfAbsent(msgId, onFailure);
     }
 
     public void onFailure(UUID msgId) {
-        Runnable action = onProcessingEnd(msgId);
-        if (action != null) {
-            action.run();
-        }
+        onProcessingEnd(msgId).ifPresent(Runnable::run);
     }
 
     public void onSuccess(UUID msgId) {
         onProcessingEnd(msgId);
     }
 
-    private Runnable onProcessingEnd(UUID msgId) {
-        if (!debugRuleNodeFailures) {
-            return null;
-        }
-        return failureSubscribers.remove(msgId);
+    private Optional<Runnable> onProcessingEnd(UUID msgId) {
+        return debugRuleNodeFailures ? Optional.ofNullable(failureSubscribers.remove(msgId)) : Optional.empty();
     }
 
 }

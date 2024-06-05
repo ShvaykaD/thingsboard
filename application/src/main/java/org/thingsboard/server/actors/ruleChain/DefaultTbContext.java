@@ -155,8 +155,7 @@ public class DefaultTbContext implements TbContext {
     }
 
     private void tellNext(TbMsg msg, Set<String> relationTypes, Throwable th) {
-        boolean debugMode = nodeCtx.getSelf().isDebugMode();
-        if (debugMode) {
+        if (nodeCtx.getSelf().isDebugMode()) {
             relationTypes.forEach(relationType -> mainCtx.persistDebugOutput(nodeCtx.getTenantId(), nodeCtx.getSelf().getId(), msg, relationType, th));
         } else if (nodeCtx.isDebugRuleNodeFailures()) {
             if (relationTypes.contains(TbNodeConnectionType.FAILURE)) {
