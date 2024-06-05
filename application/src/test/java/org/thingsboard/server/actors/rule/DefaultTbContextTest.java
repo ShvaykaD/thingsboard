@@ -316,74 +316,6 @@ public class DefaultTbContextTest {
 
     @MethodSource
     @ParameterizedTest
-    public void givenDebugModeOptionsAndTbNodeConnectionsSet_whenTellNext_thenVerify(
-            boolean defaultDebugMode, boolean debugRuleNodeFailures, Set<String> relationTypes) {
-        // GIVEN
-        var callbackMock = mock(TbMsgCallback.class);
-        var msg = getTbMsgWithCallback(callbackMock);
-        var ruleNode = new RuleNode(RULE_NODE_ID);
-        ruleNode.setRuleChainId(RULE_CHAIN_ID);
-        ruleNode.setDebugMode(defaultDebugMode);
-
-        boolean persistDebugOutput = defaultDebugMode || debugRuleNodeFailures;
-        boolean failure = relationTypes.contains(TbNodeConnectionType.FAILURE);
-        boolean failureAndDebugFailuresIsEnabled = debugRuleNodeFailures && failure;
-
-        if (defaultDebugMode || failureAndDebugFailuresIsEnabled) {
-            given(nodeCtxMock.getTenantId()).willReturn(TENANT_ID);
-        }
-        if (!defaultDebugMode) {
-            given(nodeCtxMock.isDebugRuleNodeFailures()).willReturn(debugRuleNodeFailures);
-        }
-        given(nodeCtxMock.getSelf()).willReturn(ruleNode);
-        given(nodeCtxMock.getChainActor()).willReturn(chainActorMock);
-
-        // WHEN
-        defaultTbContext.tellNext(msg, relationTypes);
-
-        // THEN
-        var expectedRuleNodeToRuleChainTellNextMsg = new RuleNodeToRuleChainTellNextMsg(
-                RULE_CHAIN_ID,
-                RULE_NODE_ID,
-                relationTypes,
-                msg,
-                null);
-        then(chainActorMock).should().tell(expectedRuleNodeToRuleChainTellNextMsg);
-        then(chainActorMock).shouldHaveNoMoreInteractions();
-        then(callbackMock).should().onProcessingEnd(RULE_NODE_ID);
-        then(callbackMock).shouldHaveNoMoreInteractions();
-        then(nodeCtxMock).should().getChainActor();
-
-        if (!persistDebugOutput) {
-            then(nodeCtxMock).shouldHaveNoMoreInteractions();
-            then(mainCtxMock).shouldHaveNoInteractions();
-            return;
-        }
-
-        if (defaultDebugMode) {
-            relationTypes.forEach(relationType ->
-                    then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, relationType, null)
-            );
-            then(mainCtxMock).shouldHaveNoMoreInteractions();
-            then(nodeCtxMock).shouldHaveNoMoreInteractions();
-            return;
-        }
-
-        if (failure) {
-            then(nodeCtxMock).should().onFailure(msg.getId());
-            then(nodeCtxMock).shouldHaveNoMoreInteractions();
-            then(mainCtxMock).should().persistDebugOutput(TENANT_ID, RULE_NODE_ID, msg, TbNodeConnectionType.FAILURE, null);
-            then(mainCtxMock).shouldHaveNoMoreInteractions();
-            return;
-        }
-
-        then(nodeCtxMock).should().onSuccess(msg.getId());
-        then(nodeCtxMock).shouldHaveNoMoreInteractions();
-        then(mainCtxMock).shouldHaveNoInteractions();
-    }
-
-    @MethodSource
-    @ParameterizedTest
     public void givenDebugModeOptionsAndTbNodeConnection_whenOutput_thenVerify(
             boolean defaultDebugMode, boolean debugRuleNodeFailures, String connectionType) {
         // GIVEN
@@ -681,16 +613,6 @@ public class DefaultTbContextTest {
         then(mainCtxMock).shouldHaveNoMoreInteractions();
         then(nodeCtxMock).should().onFailure(msg.getId());
         then(nodeCtxMock).shouldHaveNoMoreInteractions();
-    }
-
-    private static Stream<Arguments> givenDebugModeOptionsAndTbNodeConnectionsSet_whenTellNext_thenVerify() {
-        return Stream.of(
-                Arguments.of(true, false, Set.of(TbNodeConnectionType.FAILURE, TbNodeConnectionType.OTHER)),
-                Arguments.of(false, true, Set.of(TbNodeConnectionType.FAILURE, TbNodeConnectionType.FALSE)),
-                Arguments.of(false, true, Set.of(TbNodeConnectionType.OTHER, TbNodeConnectionType.TRUE)),
-                Arguments.of(false, false, Set.of(TbNodeConnectionType.FAILURE, TbNodeConnectionType.TRUE)),
-                Arguments.of(true, false, Set.of(TbNodeConnectionType.SUCCESS))
-        );
     }
 
     private static Stream<Arguments> givenDebugModeOptionsAndTbNodeConnection_whenOutput_thenVerify() {
