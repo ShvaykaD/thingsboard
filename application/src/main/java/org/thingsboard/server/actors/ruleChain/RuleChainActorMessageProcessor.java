@@ -24,6 +24,7 @@ import org.thingsboard.server.actors.service.DefaultActorService;
 import org.thingsboard.server.actors.shared.ComponentMsgProcessor;
 import org.thingsboard.server.cluster.TbClusterService;
 import org.thingsboard.server.common.data.EntityType;
+import org.thingsboard.server.common.data.TenantProfile;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.RuleChainId;
 import org.thingsboard.server.common.data.id.RuleNodeId;
@@ -43,7 +44,6 @@ import org.thingsboard.server.common.msg.queue.QueueToRuleEngineMsg;
 import org.thingsboard.server.common.msg.queue.RuleEngineException;
 import org.thingsboard.server.common.msg.queue.RuleNodeException;
 import org.thingsboard.server.common.msg.queue.TopicPartitionInfo;
-import org.thingsboard.server.common.stats.TbApiUsageReportClient;
 import org.thingsboard.server.dao.rule.RuleChainService;
 import org.thingsboard.server.gen.transport.TransportProtos.ToRuleEngineMsg;
 import org.thingsboard.server.queue.TbQueueCallback;
@@ -57,6 +57,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -72,16 +73,16 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
     private final Map<RuleNodeId, List<RuleNodeRelation>> nodeRoutes;
     private final RuleChainService service;
     private final TbClusterService clusterService;
-    private final TbApiUsageReportClient apiUsageClient;
     private String ruleChainName;
 
     private RuleNodeId firstId;
     private RuleNodeCtx firstNode;
     private boolean started;
 
+    private RuleEngineSettings ruleEngineSettings;
+
     RuleChainActorMessageProcessor(TenantId tenantId, RuleChain ruleChain, ActorSystemContext systemContext, TbActorRef parent, TbActorRef self) {
         super(systemContext, tenantId, ruleChain.getId());
-        this.apiUsageClient = systemContext.getApiUsageClient();
         this.ruleChainName = ruleChain.getName();
         this.parent = parent;
         this.self = self;
@@ -102,11 +103,13 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
             RuleChain ruleChain = service.findRuleChainById(tenantId, entityId);
             if (ruleChain != null && RuleChainType.CORE.equals(ruleChain.getType())) {
                 List<RuleNode> ruleNodeList = service.getRuleChainNodes(tenantId, entityId);
+                addTenantProfileUpdateListener(entityId, this::onTenantProfileUpdate);
+                onTenantProfileUpdate(getTenantProfile());
                 log.debug("[{}][{}] Starting rule chain with {} nodes", tenantId, entityId, ruleNodeList.size());
                 // Creating and starting the actors;
                 for (RuleNode ruleNode : ruleNodeList) {
                     log.trace("[{}][{}] Creating rule node [{}]: {}", entityId, ruleNode.getId(), ruleNode.getName(), ruleNode);
-                    TbActorRef ruleNodeActor = createRuleNodeActor(context, ruleNode);
+                    TbActorRef ruleNodeActor = createRuleNodeActor(context, ruleNode, ruleEngineSettings);
                     nodeActors.put(ruleNode.getId(), new RuleNodeCtx(tenantId, self, ruleNodeActor, ruleNode));
                 }
                 initRoutes(ruleChain, ruleNodeList);
@@ -128,7 +131,7 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
                 RuleNodeCtx existing = nodeActors.get(ruleNode.getId());
                 if (existing == null) {
                     log.trace("[{}][{}] Creating rule node [{}]: {}", entityId, ruleNode.getId(), ruleNode.getName(), ruleNode);
-                    TbActorRef ruleNodeActor = createRuleNodeActor(context, ruleNode);
+                    TbActorRef ruleNodeActor = createRuleNodeActor(context, ruleNode, ruleEngineSettings);
                     nodeActors.put(ruleNode.getId(), new RuleNodeCtx(tenantId, self, ruleNodeActor, ruleNode));
                 } else {
                     log.trace("[{}][{}] Updating rule node [{}]: {}", entityId, ruleNode.getId(), ruleNode.getName(), ruleNode);
@@ -138,7 +141,7 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
             }
 
             Set<RuleNodeId> existingNodes = ruleNodeList.stream().map(RuleNode::getId).collect(Collectors.toSet());
-            List<RuleNodeId> removedRules = nodeActors.keySet().stream().filter(node -> !existingNodes.contains(node)).collect(Collectors.toList());
+            List<RuleNodeId> removedRules = nodeActors.keySet().stream().filter(node -> !existingNodes.contains(node)).toList();
             removedRules.forEach(ruleNodeId -> {
                 log.trace("[{}][{}] Removing rule node [{}]", tenantId, entityId, ruleNodeId);
                 RuleNodeCtx removed = nodeActors.remove(ruleNodeId);
@@ -155,6 +158,7 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
         nodeActors.values().stream().map(RuleNodeCtx::getSelfActor).map(TbActorRef::getActorId).forEach(ctx::stop);
         nodeActors.clear();
         nodeRoutes.clear();
+        systemContext.getTenantProfileCache().removeListener(tenantId, entityId);
         started = false;
     }
 
@@ -164,10 +168,10 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
         nodeActors.values().stream().map(RuleNodeCtx::getSelfActor).forEach(actorRef -> actorRef.tellWithHighPriority(msg));
     }
 
-    private TbActorRef createRuleNodeActor(TbActorCtx ctx, RuleNode ruleNode) {
+    private TbActorRef createRuleNodeActor(TbActorCtx ctx, RuleNode ruleNode, RuleEngineSettings ruleEngineSettings) {
         return ctx.getOrCreateChildActor(new TbEntityActorId(ruleNode.getId()),
                 () -> DefaultActorService.RULE_DISPATCHER_NAME,
-                () -> new RuleNodeActor.ActorCreator(systemContext, tenantId, entityId, ruleChainName, ruleNode.getId()),
+                () -> new RuleNodeActor.ActorCreator(systemContext, tenantId, entityId, ruleChainName, ruleNode.getId(), ruleEngineSettings),
                 () -> true);
     }
 
@@ -177,7 +181,7 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
         for (RuleNode ruleNode : ruleNodeList) {
             List<EntityRelation> relations = service.getRuleNodeRelations(TenantId.SYS_TENANT_ID, ruleNode.getId());
             log.trace("[{}][{}][{}] Processing rule node relations [{}]", tenantId, entityId, ruleNode.getId(), relations.size());
-            if (relations.size() == 0) {
+            if (relations.isEmpty()) {
                 nodeRoutes.put(ruleNode.getId(), Collections.emptyList());
             } else {
                 for (EntityRelation relation : relations) {
@@ -238,45 +242,50 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
     }
 
     public void onRuleChainInputMsg(RuleChainInputMsg envelope) {
-        var msg = envelope.getMsg();
-        if (!checkMsgValid(msg)) {
+        var tbMsg = envelope.getMsg();
+        if (!checkMsgValid(tbMsg)) {
             return;
         }
         if (entityId.equals(envelope.getRuleChainId())) {
-            onTellNext(envelope.getMsg(), false);
+            onTellNext(tbMsg, false);
         } else {
             parent.tell(envelope);
         }
     }
 
     public void onRuleChainOutputMsg(RuleChainOutputMsg envelope) {
-        var msg = envelope.getMsg();
-        if (!checkMsgValid(msg)) {
+        var tbMsg = envelope.getMsg();
+        if (!checkMsgValid(tbMsg)) {
             return;
         }
         if (entityId.equals(envelope.getRuleChainId())) {
             var originatorNodeId = envelope.getTargetRuleNodeId();
             RuleNodeCtx ruleNodeCtx = nodeActors.get(originatorNodeId);
-            if (ruleNodeCtx != null && ruleNodeCtx.getSelf().isDebugMode()) {
-                systemContext.persistDebugOutput(tenantId, originatorNodeId, envelope.getMsg(), envelope.getRelationType());
+            if (ruleNodeCtx != null) {
+                RuleNode ruleNode = ruleNodeCtx.getSelf();
+                boolean shouldPersistDebugOutput = ruleNode.shouldPersistAllDebugOutputs(tbMsg.getTs(), ruleEngineSettings.getDebugModeDurationMinutes()) ||
+                                                   (ruleNode.shouldPersistFailureDebugOutput() && envelope.getRelationType().equals(TbNodeConnectionType.FAILURE));
+                if (shouldPersistDebugOutput) {
+                    systemContext.persistDebugOutput(tenantId, originatorNodeId, tbMsg, envelope.getRelationType());
+                }
             }
-            onTellNext(envelope.getMsg(), originatorNodeId, Collections.singleton(envelope.getRelationType()), RuleNodeException.UNKNOWN);
+            onTellNext(tbMsg, originatorNodeId, Collections.singleton(envelope.getRelationType()), RuleNodeException.UNKNOWN);
         } else {
             parent.tell(envelope);
         }
     }
 
     void onRuleChainToRuleChainMsg(RuleChainToRuleChainMsg envelope) {
-        var msg = envelope.getMsg();
-        if (!checkMsgValid(msg)) {
+        var tbMsg = envelope.getMsg();
+        if (!checkMsgValid(tbMsg)) {
             return;
         }
         try {
-            checkComponentStateActive(envelope.getMsg());
+            checkComponentStateActive(tbMsg);
             if (firstNode != null) {
-                pushMsgToNode(firstNode, envelope.getMsg(), envelope.getFromRelationType());
+                pushMsgToNode(firstNode, tbMsg, envelope.getFromRelationType());
             } else {
-                envelope.getMsg().getCallback().onSuccess();
+                tbMsg.getCallback().onSuccess();
             }
         } catch (RuleNodeException e) {
             log.debug("Rule Chain is not active. Current state [{}] for processor [{}][{}] tenant [{}]", state, entityId.getEntityType(), entityId, tenantId);
@@ -389,7 +398,7 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
 
     private void pushMsgToNode(RuleNodeCtx nodeCtx, TbMsg msg, String fromRelationType) {
         if (nodeCtx != null) {
-            nodeCtx.getSelfActor().tell(new RuleChainToRuleNodeMsg(new DefaultTbContext(systemContext, ruleChainName, nodeCtx), msg, fromRelationType));
+            nodeCtx.getSelfActor().tell(new RuleChainToRuleNodeMsg(new DefaultTbContext(systemContext, ruleChainName, nodeCtx, ruleEngineSettings), msg, fromRelationType));
         } else {
             log.error("[{}][{}] RuleNodeCtx is empty", entityId, ruleChainName);
             msg.getCallback().onFailure(new RuleEngineException("Rule Node CTX is empty"));
@@ -400,6 +409,18 @@ public class RuleChainActorMessageProcessor extends ComponentMsgProcessor<RuleCh
     protected RuleNodeException getInactiveException() {
         RuleNode firstRuleNode = firstNode != null ? firstNode.getSelf() : null;
         return new RuleNodeException("Rule Chain is not active!  Failed to initialize.", ruleChainName, firstRuleNode);
+    }
+
+    private void addTenantProfileUpdateListener(EntityId listenerId, Consumer<TenantProfile> listener) {
+        systemContext.getTenantProfileCache().addListener(tenantId, listenerId, listener);
+    }
+
+    private TenantProfile getTenantProfile() {
+        return systemContext.getTenantProfileCache().get(tenantId);
+    }
+
+    private void onTenantProfileUpdate(TenantProfile tenantProfile) {
+        ruleEngineSettings = RuleEngineSettings.fromTenantProfileOrElseSystemSettings(systemContext, tenantProfile);
     }
 
 }

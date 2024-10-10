@@ -22,7 +22,6 @@ import org.thingsboard.server.actors.stats.StatsPersistTick;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.plugin.ComponentLifecycleState;
-import org.thingsboard.server.common.data.tenant.profile.TenantProfileConfiguration;
 import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.msg.queue.PartitionChangeMsg;
 import org.thingsboard.server.common.msg.queue.RuleNodeException;
@@ -38,10 +37,6 @@ public abstract class ComponentMsgProcessor<T extends EntityId> extends Abstract
         super(systemContext);
         this.tenantId = tenantId;
         this.entityId = id;
-    }
-
-    protected TenantProfileConfiguration getTenantProfileConfiguration() {
-        return systemContext.getTenantProfileCache().get(tenantId).getProfileData().getConfiguration();
     }
 
     public abstract String getComponentName();

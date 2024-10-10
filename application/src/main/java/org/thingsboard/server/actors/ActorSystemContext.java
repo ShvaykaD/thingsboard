@@ -577,6 +577,10 @@ public class ActorSystemContext {
     @Getter
     private boolean externalNodeForceAck;
 
+    @Value("${actors.rule.node.debug_mode_duration:15}")
+    @Getter
+    private int ruleNodeDebugModeDurationMinutes;
+
     @Value("${state.rule.node.deviceState.rateLimit:1:1,30:60,60:3600}")
     @Getter
     private String deviceStateNodeRateLimitConfig;

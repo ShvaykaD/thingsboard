@@ -36,17 +36,20 @@ public class RuleNodeActor extends RuleEngineComponentActor<RuleNodeId, RuleNode
     private final String ruleChainName;
     private final RuleChainId ruleChainId;
     private final RuleNodeId ruleNodeId;
+    private final RuleEngineSettings ruleEngineSettings;
 
-    private RuleNodeActor(ActorSystemContext systemContext, TenantId tenantId, RuleChainId ruleChainId, String ruleChainName, RuleNodeId ruleNodeId) {
+    private RuleNodeActor(ActorSystemContext systemContext, TenantId tenantId, RuleChainId ruleChainId,
+                          String ruleChainName, RuleNodeId ruleNodeId, RuleEngineSettings ruleEngineSettings) {
         super(systemContext, tenantId, ruleNodeId);
         this.ruleChainName = ruleChainName;
         this.ruleChainId = ruleChainId;
         this.ruleNodeId = ruleNodeId;
+        this.ruleEngineSettings = ruleEngineSettings;
     }
 
     @Override
     protected RuleNodeActorMessageProcessor createProcessor(TbActorCtx ctx) {
-        return new RuleNodeActorMessageProcessor(tenantId, this.ruleChainName, ruleNodeId, systemContext, ctx.getParentRef(), ctx);
+        return new RuleNodeActorMessageProcessor(tenantId, this.ruleChainName, ruleNodeId, systemContext, ctx, ruleEngineSettings);
     }
 
     @Override
@@ -111,13 +114,15 @@ public class RuleNodeActor extends RuleEngineComponentActor<RuleNodeId, RuleNode
         private final RuleChainId ruleChainId;
         private final String ruleChainName;
         private final RuleNodeId ruleNodeId;
+        private final RuleEngineSettings ruleEngineSettings;
 
-        public ActorCreator(ActorSystemContext context, TenantId tenantId, RuleChainId ruleChainId, String ruleChainName, RuleNodeId ruleNodeId) {
+        public ActorCreator(ActorSystemContext context, TenantId tenantId, RuleChainId ruleChainId, String ruleChainName, RuleNodeId ruleNodeId, RuleEngineSettings ruleEngineSettings) {
             super(context);
             this.tenantId = tenantId;
             this.ruleChainId = ruleChainId;
             this.ruleChainName = ruleChainName;
             this.ruleNodeId = ruleNodeId;
+            this.ruleEngineSettings = ruleEngineSettings;
 
         }
 
@@ -128,7 +133,7 @@ public class RuleNodeActor extends RuleEngineComponentActor<RuleNodeId, RuleNode
 
         @Override
         public TbActor createActor() {
-            return new RuleNodeActor(context, tenantId, ruleChainId, ruleChainName, ruleNodeId);
+            return new RuleNodeActor(context, tenantId, ruleChainId, ruleChainName, ruleNodeId, ruleEngineSettings);
         }
     }
 

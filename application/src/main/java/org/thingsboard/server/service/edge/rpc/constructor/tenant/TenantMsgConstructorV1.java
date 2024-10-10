@@ -88,6 +88,7 @@ public class TenantMsgConstructorV1 implements TenantMsgConstructor {
         configuration.setMaxTransportDataPoints(0);
         configuration.setRuleEngineExceptionsTtlDays(0);
         configuration.setMaxRuleNodeExecutionsPerMessage(0);
+        configuration.setRuleNodeDebugModeDurationMinutes(15);
         tenantProfileData.setConfiguration(configuration);
         tenantProfile.setProfileData(tenantProfileData);
 

@@ -28,6 +28,8 @@ import org.thingsboard.server.common.data.id.RuleNodeId;
 import org.thingsboard.server.common.data.validation.Length;
 import org.thingsboard.server.common.data.validation.NoXss;
 
+import java.util.concurrent.TimeUnit;
+
 @Schema
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -45,15 +47,17 @@ public class RuleNode extends BaseDataWithAdditionalInfo<RuleNodeId> implements 
     @Length(fieldName = "name")
     @Schema(description = "User defined name of the rule node. Used on UI and for logging. ", example = "Process sensor reading")
     private String name;
-    @Schema(description = "Enable/disable debug. ", example = "false")
-    private boolean debugMode;
+    @Schema(description = "Debug strategy. ", example = "ALL_EVENTS")
+    private DebugStrategy debugStrategy;
+    @Schema(description = "Timestamp of the last rule node update.")
+    private long lastUpdateTs;
     @Schema(description = "Enable/disable singleton mode. ", example = "false")
     private boolean singletonMode;
     @Schema(description = "Queue name. ", example = "Main")
     private String queueName;
     @Schema(description = "Version of rule node configuration. ", example = "0")
     private int configurationVersion;
-    @Schema(description = "JSON with the rule node configuration. Structure depends on the rule node implementation.", implementation = com.fasterxml.jackson.databind.JsonNode.class)
+    @Schema(description = "JSON with the rule node configuration. Structure depends on the rule node implementation.", implementation = JsonNode.class)
     private transient JsonNode configuration;
     @JsonIgnore
     private byte[] configurationBytes;
@@ -73,7 +77,7 @@ public class RuleNode extends BaseDataWithAdditionalInfo<RuleNodeId> implements 
         this.ruleChainId = ruleNode.getRuleChainId();
         this.type = ruleNode.getType();
         this.name = ruleNode.getName();
-        this.debugMode = ruleNode.isDebugMode();
+        this.debugStrategy = ruleNode.getDebugStrategy();
         this.singletonMode = ruleNode.isSingletonMode();
         this.setConfiguration(ruleNode.getConfiguration());
         this.externalId = ruleNode.getExternalId();
@@ -107,10 +111,43 @@ public class RuleNode extends BaseDataWithAdditionalInfo<RuleNodeId> implements 
         return super.getCreatedTime();
     }
 
-    @Schema(description = "Additional parameters of the rule node. Contains 'layoutX' and 'layoutY' properties for visualization.", implementation = com.fasterxml.jackson.databind.JsonNode.class)
+    @Schema(description = "Additional parameters of the rule node. Contains 'layoutX' and 'layoutY' properties for visualization.", implementation = JsonNode.class)
     @Override
     public JsonNode getAdditionalInfo() {
         return super.getAdditionalInfo();
+    }
+
+    // TODO: check if possible to move TbMsg to another package to use it here instead of msgCreationTs
+    @JsonIgnore
+    public boolean shouldPersistDebugInput(long msgTs, int ruleNodeDebugModeDurationMinutes) {
+        if (!DebugStrategy.ALL_EVENTS.equals(debugStrategy)) {
+            return false;
+        }
+        return isMsgTsWithinDebugDuration(msgTs, ruleNodeDebugModeDurationMinutes);
+    }
+
+    @JsonIgnore
+    public boolean shouldPersistAnyDebugOutput(long msgCreationTs, int ruleNodeDebugModeDurationMinutes) {
+        return shouldPersistAllDebugOutputs(msgCreationTs, ruleNodeDebugModeDurationMinutes) || shouldPersistFailureDebugOutput();
+    }
+
+    @JsonIgnore
+    public boolean shouldPersistAllDebugOutputs(long msgCreationTs, int ruleNodeDebugModeDurationMinutes) {
+        if (DebugStrategy.ALL_EVENTS.equals(debugStrategy)) {
+            return isMsgTsWithinDebugDuration(msgCreationTs, ruleNodeDebugModeDurationMinutes);
+        }
+        return false;
+    }
+
+    @JsonIgnore
+    public boolean shouldPersistFailureDebugOutput() {
+        return DebugStrategy.ONLY_FAILURE_EVENTS.equals(debugStrategy);
+    }
+
+    private boolean isMsgTsWithinDebugDuration(long msgCreationTs, int ruleNodeDebugModeDurationMinutes) {
+        long debugDurationMillis = ruleNodeDebugModeDurationMinutes > 0 ?
+                TimeUnit.MINUTES.toMillis(ruleNodeDebugModeDurationMinutes) : 0;
+        return msgCreationTs < lastUpdateTs + debugDurationMillis;
     }
 
 }

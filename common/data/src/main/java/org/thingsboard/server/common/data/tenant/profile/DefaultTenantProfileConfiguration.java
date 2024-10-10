@@ -24,6 +24,8 @@ import org.thingsboard.server.common.data.ApiUsageRecordKey;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.TenantProfileType;
 
+import java.io.Serial;
+
 @Schema
 @AllArgsConstructor
 @NoArgsConstructor
@@ -31,6 +33,7 @@ import org.thingsboard.server.common.data.TenantProfileType;
 @Data
 public class DefaultTenantProfileConfiguration implements TenantProfileConfiguration {
 
+    @Serial
     private static final long serialVersionUID = -7134932690332578595L;
 
     private long maxDevices;
@@ -129,6 +132,8 @@ public class DefaultTenantProfileConfiguration implements TenantProfileConfigura
 
     private double warnThreshold;
 
+    private int ruleNodeDebugModeDurationMinutes;
+
     @Override
     public long getProfileThreshold(ApiUsageRecordKey key) {
         switch (key) {
@@ -196,5 +201,10 @@ public class DefaultTenantProfileConfiguration implements TenantProfileConfigura
     @Override
     public int getMaxRuleNodeExecsPerMessage() {
         return maxRuleNodeExecutionsPerMessage;
+    }
+
+    @Override
+    public int getRuleNodeDebugModeDurationMinutes() {
+        return ruleNodeDebugModeDurationMinutes;
     }
 }
