@@ -26,18 +26,23 @@ import org.thingsboard.server.common.util.KvProtoUtil;
 import org.thingsboard.server.gen.transport.TransportProtos.CalculatedFieldEntityCtxIdProto;
 import org.thingsboard.server.gen.transport.TransportProtos.CalculatedFieldIdProto;
 import org.thingsboard.server.gen.transport.TransportProtos.CalculatedFieldStateProto;
+import org.thingsboard.server.gen.transport.TransportProtos.GeofencingArgumentProto;
+import org.thingsboard.server.gen.transport.TransportProtos.GeofencingZoneProto;
 import org.thingsboard.server.gen.transport.TransportProtos.SingleValueArgumentProto;
 import org.thingsboard.server.gen.transport.TransportProtos.TsDoubleValProto;
 import org.thingsboard.server.gen.transport.TransportProtos.TsRollingArgumentProto;
 import org.thingsboard.server.gen.transport.TransportProtos.TsValueProto;
 import org.thingsboard.server.service.cf.ctx.CalculatedFieldEntityCtxId;
 import org.thingsboard.server.service.cf.ctx.state.CalculatedFieldState;
+import org.thingsboard.server.service.cf.ctx.state.GeofencingArgumentEntry;
 import org.thingsboard.server.service.cf.ctx.state.GeofencingCalculatedFieldState;
+import org.thingsboard.server.service.cf.ctx.state.GeofencingZoneState;
 import org.thingsboard.server.service.cf.ctx.state.ScriptCalculatedFieldState;
 import org.thingsboard.server.service.cf.ctx.state.SimpleCalculatedFieldState;
 import org.thingsboard.server.service.cf.ctx.state.SingleValueArgumentEntry;
 import org.thingsboard.server.service.cf.ctx.state.TsRollingArgumentEntry;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -80,6 +85,8 @@ public class CalculatedFieldUtils {
                 builder.addSingleValueArguments(toSingleValueArgumentProto(argName, singleValueArgumentEntry));
             } else if (argEntry instanceof TsRollingArgumentEntry rollingArgumentEntry) {
                 builder.addRollingValueArguments(toRollingArgumentProto(argName, rollingArgumentEntry));
+            } else if (argEntry instanceof GeofencingArgumentEntry geofencingArgumentEntry) {
+                builder.addGeofencingArguments(toGeofencingArgumentProto(argName, geofencingArgumentEntry));
             }
         });
         return builder.build();
@@ -108,6 +115,20 @@ public class CalculatedFieldUtils {
 
         return builder.build();
     }
+
+
+    private static GeofencingArgumentProto toGeofencingArgumentProto(String argName, GeofencingArgumentEntry geofencingArgumentEntry) {
+
+        GeofencingArgumentProto.Builder builder = GeofencingArgumentProto.newBuilder()
+                .setArgName(argName);
+
+        Map<EntityId, GeofencingZoneState> zoneStates = geofencingArgumentEntry.getZoneStates();
+        zoneStates.forEach((entityId, zoneState) -> {
+//            builder.addZones(GeofencingZoneProto.toProto(entityId, zoneState));
+        });
+        return builder.build();
+    }
+
 
     public static CalculatedFieldState fromProto(CalculatedFieldStateProto proto) {
         if (StringUtils.isEmpty(proto.getType())) {

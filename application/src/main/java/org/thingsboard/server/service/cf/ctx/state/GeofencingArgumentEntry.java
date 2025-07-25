@@ -16,8 +16,7 @@
 package org.thingsboard.server.service.cf.ctx.state;
 
 import lombok.Data;
-import org.thingsboard.common.util.JacksonUtil;
-import org.thingsboard.common.util.geo.PerimeterDefinition;
+import lombok.extern.slf4j.Slf4j;
 import org.thingsboard.script.api.tbel.TbelCfArg;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.kv.KvEntry;
@@ -28,13 +27,14 @@ import java.util.stream.Collectors;
 
 // TODO: implement
 @Data
+@Slf4j
 public class GeofencingArgumentEntry implements ArgumentEntry {
 
-    private Map<EntityId, PerimeterDefinition> geofencingIdToPerimeter;
-    private boolean forceResetPrevious;
+    private Map<EntityId, GeofencingZoneState> zoneStates;
+    private boolean forceResetPrevious = false;
 
     public GeofencingArgumentEntry(Map<EntityId, KvEntry> entityIdKvEntryMap) {
-        this.geofencingIdToPerimeter = toPerimetersMap(entityIdKvEntryMap);
+        this.zoneStates = toZones(entityIdKvEntryMap);
     }
 
     @Override
@@ -44,7 +44,7 @@ public class GeofencingArgumentEntry implements ArgumentEntry {
 
     @Override
     public Object getValue() {
-        return geofencingIdToPerimeter;
+        return zoneStates;
     }
 
     @Override
@@ -52,16 +52,18 @@ public class GeofencingArgumentEntry implements ArgumentEntry {
         if (!(entry instanceof GeofencingArgumentEntry geofencingArgumentEntry)) {
             throw new IllegalArgumentException("Unsupported argument entry type for geofencing argument entry: " + entry.getType());
         }
-        if (Objects.equals(this.geofencingIdToPerimeter, geofencingArgumentEntry.getGeofencingIdToPerimeter())) {
-            return false; // No change
+        boolean updated = false;
+        for (var zoneEntry : geofencingArgumentEntry.getZoneStates().entrySet()) {
+            if (updateZone(zoneEntry)) {
+                updated = true;
+            }
         }
-        this.geofencingIdToPerimeter = geofencingArgumentEntry.getGeofencingIdToPerimeter();
-        return true;
+        return updated;
     }
 
     @Override
     public boolean isEmpty() {
-        return geofencingIdToPerimeter == null || geofencingIdToPerimeter.isEmpty();
+        return zoneStates == null || zoneStates.isEmpty();
     }
 
     @Override
@@ -69,17 +71,30 @@ public class GeofencingArgumentEntry implements ArgumentEntry {
         return null;
     }
 
-    private Map<EntityId, PerimeterDefinition> toPerimetersMap(Map<EntityId, KvEntry> entityIdKvEntryMap) {
+    private Map<EntityId, GeofencingZoneState> toZones(Map<EntityId, KvEntry> entityIdKvEntryMap) {
         return entityIdKvEntryMap.entrySet().stream().map(entry -> {
-                    if (entry.getValue().getJsonValue().isEmpty()) {
-                        return null;
-                    }
-                    String rawPerimeterValue = entry.getValue().getJsonValue().get();
-                    PerimeterDefinition perimeter = JacksonUtil.fromString(rawPerimeterValue, PerimeterDefinition.class);
-                    return Map.entry(entry.getKey(), perimeter);
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            try {
+                if (entry.getValue().getJsonValue().isEmpty()) {
+                    return null;
+                }
+                return Map.entry(entry.getKey(), new GeofencingZoneState(entry.getKey(), entry.getValue()));
+            } catch (Exception e) {
+                log.error("Failed to parse geofencing zone perimeter for entity id: {}", entry.getKey(), e);
+                return null;
+            }
+        }).filter(Objects::nonNull).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    private boolean updateZone(Map.Entry<EntityId, GeofencingZoneState> zoneEntry) {
+        EntityId zoneId = zoneEntry.getKey();
+        GeofencingZoneState newZoneState = zoneEntry.getValue();
+
+        GeofencingZoneState existingZoneState = zoneStates.get(zoneId);
+        if (existingZoneState == null) {
+            zoneStates.put(zoneId, newZoneState);
+            return true;
+        }
+        return existingZoneState.update(newZoneState);
     }
 
 }
