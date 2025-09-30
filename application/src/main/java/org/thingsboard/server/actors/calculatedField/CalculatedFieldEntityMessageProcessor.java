@@ -393,7 +393,7 @@ public class CalculatedFieldEntityMessageProcessor extends AbstractContextAwareM
         return mapToArguments(entityId, argNames, geofencingArgumentNames, scope, attrDataList);
     }
 
-    private Map<String, ArgumentEntry> mapToArguments(EntityId entityId, Map<ReferencedEntityKey, String> argNames, List<String> geoArgNames, AttributeScopeProto scope, List<AttributeValueProto> attrDataList) {
+    private Map<String, ArgumentEntry> mapToArguments(EntityId entityId, Map<ReferencedEntityKey, String> argNames, List<String> geofencingArgNames, AttributeScopeProto scope, List<AttributeValueProto> attrDataList) {
         Map<String, ArgumentEntry> arguments = new HashMap<>();
         for (AttributeValueProto item : attrDataList) {
             ReferencedEntityKey key = new ReferencedEntityKey(item.getKey(), ArgumentType.ATTRIBUTE, AttributeScope.valueOf(scope.name()));
@@ -401,7 +401,7 @@ public class CalculatedFieldEntityMessageProcessor extends AbstractContextAwareM
             if (argName == null) {
                 continue;
             }
-            if (geoArgNames.contains(argName)) {
+            if (geofencingArgNames.contains(argName)) {
                 arguments.put(argName, new GeofencingArgumentEntry(entityId, item));
                 continue;
             }
@@ -415,26 +415,32 @@ public class CalculatedFieldEntityMessageProcessor extends AbstractContextAwareM
         if (argNames.isEmpty()) {
             return Collections.emptyMap();
         }
-        return mapToArgumentsWithDefaultValue(argNames, ctx.getArguments(), scope, removedAttrKeys);
+        List<String> geofencingArgumentNames = ctx.getLinkedEntityGeofencingArgumentNames();
+        return mapToArgumentsWithDefaultValue(argNames, ctx.getArguments(), geofencingArgumentNames, scope, removedAttrKeys);
     }
 
     private Map<String, ArgumentEntry> mapToArgumentsWithDefaultValue(CalculatedFieldCtx ctx, AttributeScopeProto scope, List<String> removedAttrKeys) {
-        return mapToArgumentsWithDefaultValue(ctx.getMainEntityArguments(), ctx.getArguments(), scope, removedAttrKeys);
+        return mapToArgumentsWithDefaultValue(ctx.getMainEntityArguments(), ctx.getArguments(), ctx.getMainEntityGeofencingArgumentNames(), scope, removedAttrKeys);
     }
 
-    private Map<String, ArgumentEntry> mapToArgumentsWithDefaultValue(Map<ReferencedEntityKey, String> argNames, Map<String, Argument> configArguments, AttributeScopeProto scope, List<String> removedAttrKeys) {
+    private Map<String, ArgumentEntry> mapToArgumentsWithDefaultValue(Map<ReferencedEntityKey, String> argNames, Map<String, Argument> configArguments, List<String> geofencingArgNames, AttributeScopeProto scope, List<String> removedAttrKeys) {
         Map<String, ArgumentEntry> arguments = new HashMap<>();
         for (String removedKey : removedAttrKeys) {
             ReferencedEntityKey key = new ReferencedEntityKey(removedKey, ArgumentType.ATTRIBUTE, AttributeScope.valueOf(scope.name()));
             String argName = argNames.get(key);
-            if (argName != null) {
-                Argument argument = configArguments.get(argName);
-                String defaultValue = (argument != null) ? argument.getDefaultValue() : null;
-                arguments.put(argName, StringUtils.isNotEmpty(defaultValue)
-                        ? new SingleValueArgumentEntry(System.currentTimeMillis(), new StringDataEntry(removedKey, defaultValue), null)
-                        : new SingleValueArgumentEntry());
-
+            if (argName == null) {
+                continue;
             }
+            if (geofencingArgNames.contains(argName)) {
+                arguments.put(argName, new GeofencingArgumentEntry());
+                continue;
+            }
+            Argument argument = configArguments.get(argName);
+            String defaultValue = (argument != null) ? argument.getDefaultValue() : null;
+            arguments.put(argName, StringUtils.isNotEmpty(defaultValue)
+                    ? new SingleValueArgumentEntry(System.currentTimeMillis(), new StringDataEntry(removedKey, defaultValue), null)
+                    : new SingleValueArgumentEntry());
+
         }
         return arguments;
     }

@@ -63,6 +63,10 @@ public class GeofencingArgumentEntry implements ArgumentEntry {
         if (!(entry instanceof GeofencingArgumentEntry geofencingArgumentEntry)) {
             throw new IllegalArgumentException("Unsupported argument entry type for geofencing argument entry: " + entry.getType());
         }
+        if (geofencingArgumentEntry.isEmpty()) {
+            zoneStates.clear();
+            return true;
+        }
         boolean updated = false;
         for (var zoneEntry : geofencingArgumentEntry.getZoneStates().entrySet()) {
             if (updateZone(zoneEntry)) {
