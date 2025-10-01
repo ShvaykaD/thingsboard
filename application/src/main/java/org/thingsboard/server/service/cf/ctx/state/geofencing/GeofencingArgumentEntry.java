@@ -41,7 +41,7 @@ public class GeofencingArgumentEntry implements ArgumentEntry {
     }
 
     public GeofencingArgumentEntry(EntityId entityId, TransportProtos.AttributeValueProto entry) {
-        this.zoneStates = toZones(Map.of(entityId, ProtoUtils.fromProto(entry)));
+        this(Map.of(entityId, ProtoUtils.fromProto(entry)));
     }
 
     public GeofencingArgumentEntry(Map<EntityId, KvEntry> entityIdkvEntryMap) {
@@ -99,6 +99,10 @@ public class GeofencingArgumentEntry implements ArgumentEntry {
         GeofencingZoneState existingZoneState = zoneStates.get(zoneId);
         if (existingZoneState == null) {
             zoneStates.put(zoneId, newZoneState);
+            return true;
+        }
+        if (newZoneState.getPerimeterDefinition() == null) {
+            zoneStates.remove(zoneId);
             return true;
         }
         return existingZoneState.update(newZoneState);
