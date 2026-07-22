@@ -17,12 +17,20 @@ package org.thingsboard.server.actors.device;
 
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.thingsboard.common.util.LinkedHashMapRemoveEldest;
 import org.thingsboard.server.actors.ActorSystemContext;
+import org.thingsboard.server.actors.TbActorCtx;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.TenantId;
+import org.thingsboard.server.common.data.rpc.Rpc;
+import org.thingsboard.server.common.data.rpc.ToDeviceRpcRequestBody;
+import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequest;
+import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequestActorMsg;
 import org.thingsboard.server.dao.device.DeviceService;
+import org.thingsboard.server.service.rpc.TbCoreDeviceRpcService;
+import org.thingsboard.server.service.rpc.TbRpcService;
 import org.thingsboard.server.service.transport.TbCoreToTransportService;
 
 import java.util.UUID;
@@ -31,9 +39,11 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 public class DeviceActorMessageProcessorTest {
 
@@ -51,6 +61,7 @@ public class DeviceActorMessageProcessorTest {
         deviceService = mock(DeviceService.class);
         willReturn(MAX_CONCURRENT_SESSIONS_PER_DEVICE).given(systemContext).getMaxConcurrentSessionsPerDevice();
         willReturn(deviceService).given(systemContext).getDeviceService();
+        willReturn("BURST").given(systemContext).getRpcSubmitStrategy();
         processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
         willReturn(mock(TbCoreToTransportService.class)).given(systemContext).getTbCoreToTransportService();
     }
@@ -82,5 +93,22 @@ public class DeviceActorMessageProcessorTest {
         assertThat(processor.attributeSubscriptions.size(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE-1));
         assertThat(processor.rpcSubscriptions.size(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE-1));
 
+    }
+
+    @Test
+    public void persistsRequestIdOnCreate() {
+        TbRpcService rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        ToDeviceRpcRequest request = new ToDeviceRpcRequest(UUID.randomUUID(), tenantId, deviceId,
+                false, System.currentTimeMillis() + 60_000, new ToDeviceRpcRequestBody("m", "{}"),
+                true, null, null); // persisted=true, oneway=false
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", request));
+
+        ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
+        verify(rpcService).create(eq(tenantId), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getRequestId()).isEqualTo(0); // first rpcSeq
     }
 }
