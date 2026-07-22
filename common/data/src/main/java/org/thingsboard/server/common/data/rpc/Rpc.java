@@ -44,6 +44,7 @@ public class Rpc extends BaseData<RpcId> implements HasTenantId {
     private RpcStatus status;
     @Schema(description = "Additional info used in the rule engine to process the updates to the RPC state.", accessMode = Schema.AccessMode.READ_ONLY)
     private JsonNode additionalInfo;
+    private Integer requestId;
 
     public Rpc() {
         super();
@@ -62,6 +63,7 @@ public class Rpc extends BaseData<RpcId> implements HasTenantId {
         this.response = rpc.getResponse();
         this.status = rpc.getStatus();
         this.additionalInfo = rpc.getAdditionalInfo();
+        this.requestId = rpc.getRequestId();
     }
 
     @Schema(description = "JSON object with the rpc Id. Referencing non-existing rpc Id will cause error.")

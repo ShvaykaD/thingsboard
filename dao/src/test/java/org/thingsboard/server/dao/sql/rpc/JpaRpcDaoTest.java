@@ -177,6 +177,18 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id)).isNull();
     }
 
+    @Test
+    public void requestIdRoundTripsThroughSaveAndLoad() {
+        UUID id = UUID.randomUUID();
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        Rpc toSave = rpc(id, deviceId, RpcStatus.SENT, null);
+        toSave.setRequestId(42);
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, toSave);
+
+        Rpc loaded = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
+        assertThat(loaded.getRequestId()).isEqualTo(42);
+    }
+
     private Rpc rpc(UUID id, DeviceId deviceId, RpcStatus status, JsonNode response) {
         Rpc rpc = new Rpc(new RpcId(id));
         rpc.setCreatedTime(System.currentTimeMillis());
