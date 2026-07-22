@@ -417,7 +417,7 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         }
     }
 
-    private void sendPendingRequests(UUID sessionId, String nodeId) {
+    void sendPendingRequests(UUID sessionId, String nodeId) {
         SessionType sessionType = getSessionType(sessionId);
         if (!toDeviceRpcPendingMap.isEmpty()) {
             log.debug("[{}] Pushing {} pending RPC messages to session: [{}]", deviceId, sessionId, toDeviceRpcPendingMap.size());
@@ -433,9 +433,13 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         if (rpcSequential) {
             getFirstRpc().ifPresent(processPendingRpc(sessionId, nodeId, sentOneWayIds));
         } else if (sessionType == SessionType.ASYNC) {
-            toDeviceRpcPendingMap.entrySet().forEach(processPendingRpc(sessionId, nodeId, sentOneWayIds));
+            toDeviceRpcPendingMap.entrySet().stream()
+                    .filter(e -> !e.getValue().isDelivered())
+                    .forEach(processPendingRpc(sessionId, nodeId, sentOneWayIds));
         } else {
-            toDeviceRpcPendingMap.entrySet().stream().findFirst().ifPresent(processPendingRpc(sessionId, nodeId, sentOneWayIds));
+            toDeviceRpcPendingMap.entrySet().stream()
+                    .filter(e -> !e.getValue().isDelivered())
+                    .findFirst().ifPresent(processPendingRpc(sessionId, nodeId, sentOneWayIds));
         }
 
         sentOneWayIds.stream().filter(id -> !toDeviceRpcPendingMap.get(id).getMsg().getMsg().isPersisted()).forEach(toDeviceRpcPendingMap::remove);

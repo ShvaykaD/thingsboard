@@ -34,7 +34,9 @@ import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequest;
 import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequestActorMsg;
 import org.thingsboard.server.dao.device.DeviceService;
 import org.thingsboard.server.gen.transport.TransportProtos.SessionInfoProto;
+import org.thingsboard.server.gen.transport.TransportProtos.SessionType;
 import org.thingsboard.server.gen.transport.TransportProtos.ToDeviceRpcResponseMsg;
+import org.thingsboard.server.gen.transport.TransportProtos.ToTransportMsg;
 import org.thingsboard.server.service.rpc.TbCoreDeviceRpcService;
 import org.thingsboard.server.service.rpc.TbRpcService;
 import org.thingsboard.server.service.transport.TbCoreToTransportService;
@@ -50,6 +52,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -222,6 +225,53 @@ public class DeviceActorMessageProcessorTest {
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
         verify(rpcService).create(eq(tenantId), captor.capture());
         org.assertj.core.api.Assertions.assertThat(captor.getValue().getRequestId()).isEqualTo(6);
+    }
+
+    @Test
+    public void resubscribeReSendsUndeliveredButNotDelivered() {
+        TbRpcService rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+        willReturn("svc").given(systemContext).getServiceId();
+        TbCoreToTransportService toTransport = mock(TbCoreToTransportService.class);
+        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
+
+        Rpc sent = inFlightRow(RpcStatus.SENT, 6, 1000L);        // undelivered
+        Rpc delivered = inFlightRow(RpcStatus.DELIVERED, 5, 2000L);
+        stubReload(rpcService, RpcStatus.QUEUED);
+        willReturn(new PageData<>(List.of(sent), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
+        willReturn(new PageData<>(List.of(delivered), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.DELIVERED), any());
+        processor.init(mock(TbActorCtx.class));
+
+        // seed an ASYNC session so sendPendingRequests takes the forEach branch, then push directly:
+        UUID sessionId = UUID.randomUUID();
+        SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
+        processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
+        processor.rpcSubscriptions.put(sessionId, sessionInfo);
+        processor.sendPendingRequests(sessionId, "svc");
+
+        // sendToTransport wraps the request in a ToTransportMsg and calls the 2-arg process(nodeId, msg):
+        ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
+        verify(toTransport, atLeastOnce()).process(any(), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getAllValues())
+                .extracting(m -> m.getToDeviceRequest().getRequestId())
+                .contains(6).doesNotContain(5); // undelivered re-sent, delivered not
+    }
+
+    private Rpc inFlightRow(RpcStatus status, int requestId, long createdTime) {
+        UUID rpcUuid = UUID.randomUUID();
+        long exp = System.currentTimeMillis() + 60_000;
+        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, false, exp,
+                new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
+        Rpc rpc = new Rpc(new RpcId(rpcUuid));
+        rpc.setCreatedTime(createdTime);
+        rpc.setExpirationTime(exp);
+        rpc.setStatus(status);
+        rpc.setRequestId(requestId);
+        rpc.setRequest(JacksonUtil.valueToTree(req));
+        return rpc;
     }
 
     private void stubReload(TbRpcService s, RpcStatus st) {
