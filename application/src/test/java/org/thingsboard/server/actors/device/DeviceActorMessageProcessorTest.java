@@ -19,26 +19,34 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.common.util.LinkedHashMapRemoveEldest;
 import org.thingsboard.server.actors.ActorSystemContext;
 import org.thingsboard.server.actors.TbActorCtx;
 import org.thingsboard.server.common.data.id.DeviceId;
+import org.thingsboard.server.common.data.id.RpcId;
 import org.thingsboard.server.common.data.id.TenantId;
+import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.rpc.Rpc;
+import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.common.data.rpc.ToDeviceRpcRequestBody;
 import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequest;
 import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequestActorMsg;
 import org.thingsboard.server.dao.device.DeviceService;
+import org.thingsboard.server.gen.transport.TransportProtos.SessionInfoProto;
+import org.thingsboard.server.gen.transport.TransportProtos.ToDeviceRpcResponseMsg;
 import org.thingsboard.server.service.rpc.TbCoreDeviceRpcService;
 import org.thingsboard.server.service.rpc.TbRpcService;
 import org.thingsboard.server.service.transport.TbCoreToTransportService;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
@@ -110,5 +118,53 @@ public class DeviceActorMessageProcessorTest {
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
         verify(rpcService).create(eq(tenantId), captor.capture());
         org.assertj.core.api.Assertions.assertThat(captor.getValue().getRequestId()).isEqualTo(0); // first rpcSeq
+    }
+
+    @Test
+    public void reloadedDeliveredRpcMatchesDeviceResponse() {
+        TbRpcService rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        TbCoreDeviceRpcService coreRpc = mock(TbCoreDeviceRpcService.class);
+        willReturn(coreRpc).given(systemContext).getTbCoreDeviceRpcService();
+        willReturn("svc").given(systemContext).getServiceId();
+
+        UUID rpcUuid = UUID.randomUUID();
+        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, false,
+                System.currentTimeMillis() + 60_000, new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
+        Rpc row = new Rpc(new RpcId(rpcUuid));
+        row.setCreatedTime(System.currentTimeMillis());
+        row.setExpirationTime(System.currentTimeMillis() + 60_000);
+        row.setStatus(RpcStatus.DELIVERED);
+        row.setRequestId(7);
+        row.setRequest(JacksonUtil.valueToTree(req));
+
+        // QUEUED/SENT empty, DELIVERED returns our row:
+        willReturn(new PageData<>(List.of(), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.QUEUED), any());
+        willReturn(new PageData<>(List.of(), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
+        willReturn(new PageData<>(List.of(row), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.DELIVERED), any());
+
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        processor.init(ctx);
+
+        // device replies with the OLD id 7:
+        processor.processRpcResponses(sessionInfoProto(), ToDeviceRpcResponseMsg.newBuilder()
+                .setRequestId(7).setPayload("{\"ok\":true}").build());
+
+        // matched → row updated to SUCCESSFUL (not "stale"):
+        ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
+        verify(rpcService).update(eq(tenantId), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
+    }
+
+    private SessionInfoProto sessionInfoProto() {
+        UUID sid = UUID.randomUUID();
+        return SessionInfoProto.newBuilder()
+                .setNodeId("svc")
+                .setSessionIdMSB(sid.getMostSignificantBits())
+                .setSessionIdLSB(sid.getLeastSignificantBits())
+                .build();
     }
 }
