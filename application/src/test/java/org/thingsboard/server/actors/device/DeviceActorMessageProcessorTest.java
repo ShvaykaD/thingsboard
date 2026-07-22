@@ -159,6 +159,39 @@ public class DeviceActorMessageProcessorTest {
         org.assertj.core.api.Assertions.assertThat(captor.getValue().getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
     }
 
+    @Test
+    public void oneWayDeliveredRowNotReExpiredOnReload() {
+        TbRpcService rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+        willReturn("svc").given(systemContext).getServiceId();
+
+        UUID rpcUuid = UUID.randomUUID();
+        long pastExp = System.currentTimeMillis() - 60_000; // already expired
+        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, true /*oneway*/,
+                pastExp, new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
+        Rpc row = new Rpc(new RpcId(rpcUuid));
+        row.setCreatedTime(System.currentTimeMillis() - 120_000);
+        row.setExpirationTime(pastExp);
+        row.setStatus(RpcStatus.DELIVERED);
+        row.setRequestId(9);
+        row.setRequest(JacksonUtil.valueToTree(req));
+
+        // QUEUED/SENT empty, DELIVERED returns our past-due one-way row:
+        willReturn(new PageData<>(List.of(), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.QUEUED), any());
+        willReturn(new PageData<>(List.of(), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
+        willReturn(new PageData<>(List.of(row), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.DELIVERED), any());
+
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        processor.init(ctx);
+
+        // terminal one-way DELIVERED row, past expiry: must be left untouched, no EXPIRED overwrite
+        Mockito.verify(rpcService, Mockito.never()).update(any(), any());
+    }
+
     private SessionInfoProto sessionInfoProto() {
         UUID sid = UUID.randomUUID();
         return SessionInfoProto.newBuilder()

@@ -298,20 +298,6 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
                 .build();
     }
 
-    private ToDeviceRpcRequestMsg createToDeviceRpcRequestMsg(ToDeviceRpcRequest request, int requestId) {
-        ToDeviceRpcRequestBody body = request.getBody();
-        return ToDeviceRpcRequestMsg.newBuilder()
-                .setRequestId(requestId)
-                .setMethodName(body.getMethod())
-                .setParams(body.getParams())
-                .setExpirationTime(request.getExpirationTime())
-                .setRequestIdMSB(request.getId().getMostSignificantBits())
-                .setRequestIdLSB(request.getId().getLeastSignificantBits())
-                .setOneway(request.isOneway())
-                .setPersisted(request.isPersisted())
-                .build();
-    }
-
     private List<Rpc> loadInFlightRpcs() {
         List<Rpc> inFlight = new ArrayList<>();
         for (RpcStatus status : List.of(RpcStatus.QUEUED, RpcStatus.SENT, RpcStatus.DELIVERED)) {
@@ -329,15 +315,15 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
 
     private void restorePendingRpc(TbActorCtx ctx, Rpc rpc) {
         ToDeviceRpcRequest msg = JacksonUtil.convertValue(rpc.getRequest(), ToDeviceRpcRequest.class);
+        RpcStatus status = rpc.getStatus();
+        if (msg.isOneway() && status != RpcStatus.QUEUED) {
+            return; // one-way SENT/DELIVERED is terminal for reload — leave the persisted row untouched
+        }
         long timeout = rpc.getExpirationTime() - System.currentTimeMillis();
         if (timeout <= 0) {
             rpc.setStatus(RpcStatus.EXPIRED);
             systemContext.getTbRpcService().update(tenantId, rpc);
             return;
-        }
-        RpcStatus status = rpc.getStatus();
-        if (msg.isOneway() && status != RpcStatus.QUEUED) {
-            return; // one-way is terminal once sent/delivered — only redeliver QUEUED one-way
         }
         Integer persistedId = rpc.getRequestId();
         int requestId = persistedId != null ? persistedId : rpcSeq++; // legacy rows (null): fresh id, today's behavior
