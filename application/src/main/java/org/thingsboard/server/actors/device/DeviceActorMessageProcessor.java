@@ -327,6 +327,7 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         }
         Integer persistedId = rpc.getRequestId();
         int requestId = persistedId != null ? persistedId : rpcSeq++; // legacy rows (null): fresh id, today's behavior
+        rpcSeq = Math.max(rpcSeq, requestId + 1); // keep the counter past every reloaded id
         boolean sent = status != RpcStatus.QUEUED;
         boolean delivered = status == RpcStatus.DELIVERED;
         registerRestoredRpc(ctx, msg, requestId, sent, delivered, timeout, rpc.getCreatedTime());

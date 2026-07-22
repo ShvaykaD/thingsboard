@@ -192,6 +192,43 @@ public class DeviceActorMessageProcessorTest {
         Mockito.verify(rpcService, Mockito.never()).update(any(), any());
     }
 
+    @Test
+    public void seedsCounterPastHighestReloadedId() {
+        TbRpcService rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+        willReturn("svc").given(systemContext).getServiceId();
+
+        Rpc row = new Rpc(new RpcId(UUID.randomUUID()));
+        row.setCreatedTime(System.currentTimeMillis());
+        row.setExpirationTime(System.currentTimeMillis() + 60_000);
+        row.setStatus(RpcStatus.SENT);
+        row.setRequestId(5);
+        row.setRequest(JacksonUtil.valueToTree(new ToDeviceRpcRequest(row.getUuidId(), tenantId, deviceId,
+                false, row.getExpirationTime(), new ToDeviceRpcRequestBody("m", "{}"), true, null, null)));
+        stubReload(rpcService, RpcStatus.QUEUED); // empty
+        stubReload(rpcService, RpcStatus.DELIVERED); // empty
+        willReturn(new PageData<>(List.of(row), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
+
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        processor.init(ctx);
+
+        // next brand-new persistent RPC must get id 6, not 0:
+        ToDeviceRpcRequest req = new ToDeviceRpcRequest(UUID.randomUUID(), tenantId, deviceId, false,
+                System.currentTimeMillis() + 60_000, new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", req));
+
+        ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
+        verify(rpcService).create(eq(tenantId), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getRequestId()).isEqualTo(6);
+    }
+
+    private void stubReload(TbRpcService s, RpcStatus st) {
+        willReturn(new PageData<>(List.of(), 1, 0, false)).given(s)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(st), any());
+    }
+
     private SessionInfoProto sessionInfoProto() {
         UUID sid = UUID.randomUUID();
         return SessionInfoProto.newBuilder()
