@@ -44,6 +44,7 @@ import org.thingsboard.server.service.transport.TbCoreToTransportService;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -120,7 +121,7 @@ public class DeviceActorMessageProcessorTest {
 
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
         verify(rpcService).create(eq(tenantId), captor.capture());
-        org.assertj.core.api.Assertions.assertThat(captor.getValue().getRequestId()).isEqualTo(0); // first rpcSeq
+        assertThat(captor.getValue().getRequestId()).isEqualTo(0); // first rpcSeq
     }
 
     @Test
@@ -159,7 +160,7 @@ public class DeviceActorMessageProcessorTest {
         // matched → row updated to SUCCESSFUL (not "stale"):
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
         verify(rpcService).update(eq(tenantId), captor.capture());
-        org.assertj.core.api.Assertions.assertThat(captor.getValue().getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
+        assertThat(captor.getValue().getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
     }
 
     @Test
@@ -224,7 +225,7 @@ public class DeviceActorMessageProcessorTest {
 
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
         verify(rpcService).create(eq(tenantId), captor.capture());
-        org.assertj.core.api.Assertions.assertThat(captor.getValue().getRequestId()).isEqualTo(6);
+        assertThat(captor.getValue().getRequestId()).isEqualTo(6);
     }
 
     @Test
@@ -255,7 +256,7 @@ public class DeviceActorMessageProcessorTest {
         // sendToTransport wraps the request in a ToTransportMsg and calls the 2-arg process(nodeId, msg):
         ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
         verify(toTransport, atLeastOnce()).process(any(), captor.capture());
-        org.assertj.core.api.Assertions.assertThat(captor.getAllValues())
+        assertThat(captor.getAllValues())
                 .extracting(m -> m.getToDeviceRequest().getRequestId())
                 .contains(6).doesNotContain(5); // undelivered re-sent, delivered not
     }
@@ -286,7 +287,7 @@ public class DeviceActorMessageProcessorTest {
         // one-way SENT is no longer skipped on reload — it must be re-published to the device:
         ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
         verify(toTransport, atLeastOnce()).process(any(), captor.capture());
-        org.assertj.core.api.Assertions.assertThat(captor.getAllValues())
+        assertThat(captor.getAllValues())
                 .extracting(m -> m.getToDeviceRequest().getRequestId())
                 .contains(6);
     }
@@ -328,7 +329,7 @@ public class DeviceActorMessageProcessorTest {
         // fresh-id fallback (rpcSeq, starting at 0) was assigned and the row was registered/re-published:
         ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
         verify(toTransport, atLeastOnce()).process(any(), captor.capture());
-        org.assertj.core.api.Assertions.assertThat(captor.getAllValues())
+        assertThat(captor.getAllValues())
                 .extracting(m -> m.getToDeviceRequest().getRequestId())
                 .contains(0);
     }
@@ -366,7 +367,7 @@ public class DeviceActorMessageProcessorTest {
         // the bad row is silently skipped; the following good row still restores and re-publishes:
         ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
         verify(toTransport, atLeastOnce()).process(any(), captor.capture());
-        org.assertj.core.api.Assertions.assertThat(captor.getAllValues())
+        assertThat(captor.getAllValues())
                 .extracting(m -> m.getToDeviceRequest().getRequestId())
                 .contains(9)
                 .doesNotContain(7);
