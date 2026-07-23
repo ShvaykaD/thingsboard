@@ -74,6 +74,15 @@ class LtsMigrationServiceTest {
         };
     }
 
+    /** Records apply() and applyAfterCommit() calls (distinctly tagged) into a single shared ordered list. */
+    private LtsMigration migrationWithAfterCommit(String version, List<String> sequence) {
+        return new LtsMigration() {
+            @Override public String getVersion() { return version; }
+            @Override public void apply() { sequence.add("apply(" + version + ")"); }
+            @Override public void applyAfterCommit() { sequence.add("applyAfterCommit(" + version + ")"); }
+        };
+    }
+
     private LtsMigrationService service(List<LtsMigration> migrations) {
         return new LtsMigrationService(jdbcTemplate, installScripts, schemaSettingsService, txManager, migrations);
     }
@@ -244,5 +253,35 @@ class LtsMigrationServiceTest {
     void failsLoudOnUnparseableVersion() {
         List<String> applied = new ArrayList<>();
         assertThrows(IllegalArgumentException.class, () -> service(List.of(migration("nope", applied))));
+    }
+
+    @Test
+    void applyMigrationsRunsAllApplyThenAfterSchemaPhaseThenAllApplyAfterCommit() {
+        List<String> sequence = new ArrayList<>();
+        LtsMigrationService service = service(List.of(
+                migrationWithAfterCommit("4.2.2.3", sequence),
+                migrationWithAfterCommit("4.2.2.4", sequence)));
+        Runnable afterSchemaPhase = () -> sequence.add("afterSchemaPhase");
+
+        service.applyMigrations("4.2.2.2", "4.2.2.4", afterSchemaPhase);
+
+        assertEquals(List.of(
+                "apply(4.2.2.3)", "apply(4.2.2.4)",
+                "afterSchemaPhase",
+                "applyAfterCommit(4.2.2.3)", "applyAfterCommit(4.2.2.4)"), sequence);
+    }
+
+    @Test
+    void applyMigrationsDoesNotRecordVersionWhenApplyAfterCommitFails() {
+        LtsMigration failing = new LtsMigration() {
+            @Override public String getVersion() { return "4.2.2.3"; }
+            @Override public void applyAfterCommit() { throw new RuntimeException("backfill failed"); }
+        };
+        LtsMigrationService service = service(List.of(failing));
+
+        assertThrows(RuntimeException.class,
+                () -> service.applyMigrations("4.2.2.2", "4.2.2.3", () -> {}));
+
+        verify(schemaSettingsService, never()).updateSchemaVersion(anyString());
     }
 }
