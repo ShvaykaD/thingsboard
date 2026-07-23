@@ -115,6 +115,11 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
 
+    private static final JsonNode LEGACY_UNTRACKED_RESPONSE = JacksonUtil.newObjectNode().put("error",
+            "This RPC was no longer tracked by the platform after a restart and could not reach a terminal state " +
+                    "on its own. It was left stuck in a non-terminal state (SENT or DELIVERED) and has now been " +
+                    "closed automatically.");
+
     final TenantId tenantId;
     final DeviceId deviceId;
     final LinkedHashMapRemoveEldest<UUID, SessionInfoMetaData> sessions;
@@ -325,6 +330,20 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
             return; // one-way DELIVERED is the terminal success state — leave untouched, never re-publish.
             // One-way SENT falls through to reload/re-arm/re-publish. SENT only exists for QoS 1
             // (QoS 0 goes QUEUED->DELIVERED on write), so this re-publish auto-scopes to QoS 1.
+        }
+        // TODO(cleanup, post-4.3.1.4): transitional back-compat for rows created before request_id existed.
+        // This SENT/DELIVERED close-guard and the QUEUED fresh-id fallback below go dead once no rpc row has
+        // request_id IS NULL (all cores upgraded AND every device with a legacy in-flight row reconnected once —
+        // this guard / the 4.3.1.4 migration drain them). Safe to delete in a later release; consider making
+        // rpc.request_id NOT NULL then. (The msg == null guard above is permanent.)
+        if (rpc.getRequestId() == null && (status == RpcStatus.SENT || status == RpcStatus.DELIVERED)) {
+            // Untrackable legacy row (one-way DELIVERED already returned above; the reload query now also excludes
+            // null-oneway DELIVERED, so this is reached mainly by legacy SENT stragglers). Close it — re-publishing
+            // would push a stale command to the device. Past expiry -> EXPIRED, otherwise -> FAILED.
+            rpc.setStatus(rpc.getExpirationTime() < System.currentTimeMillis() ? RpcStatus.EXPIRED : RpcStatus.FAILED);
+            rpc.setResponse(LEGACY_UNTRACKED_RESPONSE);
+            systemContext.getTbRpcService().update(tenantId, rpc);
+            return;
         }
         long timeout = rpc.getExpirationTime() - System.currentTimeMillis();
         if (timeout <= 0) {

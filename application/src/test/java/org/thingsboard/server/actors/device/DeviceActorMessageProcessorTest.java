@@ -258,6 +258,25 @@ public class DeviceActorMessageProcessorTest {
         assertThat(publishedRequestIds()).contains(9).doesNotContain(7);
     }
 
+    @Test
+    public void legacyNullSentRowIsClosedNotRePublished() {
+        mockRpcInfra();
+        Rpc row = row(UUID.randomUUID(), RpcStatus.SENT, System.currentTimeMillis(),
+                System.currentTimeMillis() + 60_000, false); // two-way, future expiration
+        row.setRequestId(null); // legacy pre-migration row: no persisted requestId
+        stubInFlight(row);
+
+        processor.init(mock(TbActorCtx.class));
+        pushViaAsyncSession();
+
+        // untrackable legacy row must be closed (not re-armed/re-published):
+        ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
+        verify(rpcService).update(eq(tenantId), captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(RpcStatus.FAILED);
+        assertThat(captor.getValue().getResponse()).isNotNull();
+        Mockito.verify(toTransport, Mockito.never()).process(any(), any());
+    }
+
     private void mockRpcInfra() {
         rpcService = mock(TbRpcService.class);
         willReturn(rpcService).given(systemContext).getTbRpcService();
