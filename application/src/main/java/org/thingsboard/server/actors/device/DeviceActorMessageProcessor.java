@@ -316,8 +316,10 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
     private void restorePendingRpc(TbActorCtx ctx, Rpc rpc) {
         ToDeviceRpcRequest msg = JacksonUtil.convertValue(rpc.getRequest(), ToDeviceRpcRequest.class);
         RpcStatus status = rpc.getStatus();
-        if (msg.isOneway() && status != RpcStatus.QUEUED) {
-            return; // one-way SENT/DELIVERED is terminal for reload — leave the persisted row untouched
+        if (msg.isOneway() && status == RpcStatus.DELIVERED) {
+            return; // one-way DELIVERED is the terminal success state — leave untouched, never re-publish.
+            // One-way SENT falls through to reload/re-arm/re-publish. SENT only exists for QoS 1
+            // (QoS 0 goes QUEUED->DELIVERED on write), so this re-publish auto-scopes to QoS 1.
         }
         long timeout = rpc.getExpirationTime() - System.currentTimeMillis();
         if (timeout <= 0) {

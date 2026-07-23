@@ -260,10 +260,87 @@ public class DeviceActorMessageProcessorTest {
                 .contains(6).doesNotContain(5); // undelivered re-sent, delivered not
     }
 
-    private Rpc inFlightRow(RpcStatus status, int requestId, long createdTime) {
+    @Test
+    public void oneWaySentRowIsRePublishedOnReload() {
+        TbRpcService rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+        willReturn("svc").given(systemContext).getServiceId();
+        TbCoreToTransportService toTransport = mock(TbCoreToTransportService.class);
+        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
+
+        Rpc onewaySent = inFlightRow(RpcStatus.SENT, 6, 1000L, true); // one-way, QoS-1 publish->PUBACK window
+        stubReload(rpcService, RpcStatus.QUEUED);
+        stubReload(rpcService, RpcStatus.DELIVERED);
+        willReturn(new PageData<>(List.of(onewaySent), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
+        processor.init(mock(TbActorCtx.class));
+
+        // seed an ASYNC session so sendPendingRequests takes the forEach branch, then push directly:
+        UUID sessionId = UUID.randomUUID();
+        SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
+        processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
+        processor.rpcSubscriptions.put(sessionId, sessionInfo);
+        processor.sendPendingRequests(sessionId, "svc");
+
+        // one-way SENT is no longer skipped on reload — it must be re-published to the device:
+        ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
+        verify(toTransport, atLeastOnce()).process(any(), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getAllValues())
+                .extracting(m -> m.getToDeviceRequest().getRequestId())
+                .contains(6);
+    }
+
+    @Test
+    public void legacyNullRequestIdRowReloadsWithoutNpe() {
+        TbRpcService rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+        willReturn("svc").given(systemContext).getServiceId();
+        TbCoreToTransportService toTransport = mock(TbCoreToTransportService.class);
+        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
+
         UUID rpcUuid = UUID.randomUUID();
         long exp = System.currentTimeMillis() + 60_000;
         ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, false, exp,
+                new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
+        Rpc legacyRow = new Rpc(new RpcId(rpcUuid));
+        legacyRow.setCreatedTime(System.currentTimeMillis());
+        legacyRow.setExpirationTime(exp);
+        legacyRow.setStatus(RpcStatus.QUEUED);
+        legacyRow.setRequestId(null); // legacy pre-migration row: no persisted requestId
+        legacyRow.setRequest(JacksonUtil.valueToTree(req));
+
+        willReturn(new PageData<>(List.of(legacyRow), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.QUEUED), any());
+        stubReload(rpcService, RpcStatus.SENT);
+        stubReload(rpcService, RpcStatus.DELIVERED);
+
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        processor.init(ctx); // must not NPE despite the null persisted requestId
+
+        UUID sessionId = UUID.randomUUID();
+        SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
+        processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
+        processor.rpcSubscriptions.put(sessionId, sessionInfo);
+        processor.sendPendingRequests(sessionId, "svc");
+
+        // fresh-id fallback (rpcSeq, starting at 0) was assigned and the row was registered/re-published:
+        ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
+        verify(toTransport, atLeastOnce()).process(any(), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getAllValues())
+                .extracting(m -> m.getToDeviceRequest().getRequestId())
+                .contains(0);
+    }
+
+    private Rpc inFlightRow(RpcStatus status, int requestId, long createdTime) {
+        return inFlightRow(status, requestId, createdTime, false);
+    }
+
+    private Rpc inFlightRow(RpcStatus status, int requestId, long createdTime, boolean oneway) {
+        UUID rpcUuid = UUID.randomUUID();
+        long exp = System.currentTimeMillis() + 60_000;
+        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, oneway, exp,
                 new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
         Rpc rpc = new Rpc(new RpcId(rpcUuid));
         rpc.setCreatedTime(createdTime);

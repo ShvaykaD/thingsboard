@@ -44,6 +44,7 @@ public class Rpc extends BaseData<RpcId> implements HasTenantId {
     private RpcStatus status;
     @Schema(description = "Additional info used in the rule engine to process the updates to the RPC state.", accessMode = Schema.AccessMode.READ_ONLY)
     private JsonNode additionalInfo;
+    @Schema(description = "Transport request id used to correlate the device's response to this RPC.", accessMode = Schema.AccessMode.READ_ONLY)
     private Integer requestId;
 
     public Rpc() {
