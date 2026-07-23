@@ -301,12 +301,10 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
                 .build();
     }
 
-    private static final List<RpcStatus> IN_FLIGHT_STATUSES = List.of(RpcStatus.QUEUED, RpcStatus.SENT, RpcStatus.DELIVERED);
-
     private List<Rpc> loadInFlightRpcs() {
         List<Rpc> inFlight = new ArrayList<>();
         new PageDataIterable<>(link -> systemContext.getTbRpcService()
-                .findAllByDeviceIdAndStatusIn(tenantId, deviceId, IN_FLIGHT_STATUSES, link), 1024)
+                .findInFlightForReload(tenantId, deviceId, link), 1024)
                 .forEach(inFlight::add);
         // createdTime == submission order; requestId (rpcSeq at creation) breaks same-millisecond ties
         // so the reload (and thus the sequential re-publish) order is deterministic. Legacy rows have a

@@ -200,19 +200,28 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
-    public void findAllByDeviceIdAndStatusInReturnsOnlyMatchingStatuses() {
+    public void findInFlightForReloadExcludesOneWayDeliveredAndTerminal() {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
-        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.QUEUED, null));
-        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.SENT, null));
-        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.DELIVERED, null));
-        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.SUCCESSFUL, null));
+        UUID q = saveRpc(deviceId, RpcStatus.QUEUED, false);
+        UUID s = saveRpc(deviceId, RpcStatus.SENT, true);          // one-way SENT still reloaded (retry)
+        UUID twoWayDel = saveRpc(deviceId, RpcStatus.DELIVERED, false);
+        saveRpc(deviceId, RpcStatus.DELIVERED, true);              // one-way DELIVERED -> excluded
+        saveRpc(deviceId, RpcStatus.SUCCESSFUL, false);            // terminal -> excluded
 
-        List<Rpc> inFlight = rpcDao.findAllByDeviceIdAndStatusIn(TenantId.SYS_TENANT_ID, deviceId,
-                List.of(RpcStatus.QUEUED, RpcStatus.SENT, RpcStatus.DELIVERED), new PageLink(100)).getData();
+        List<UUID> got = rpcDao.findInFlightForReload(TenantId.SYS_TENANT_ID, deviceId, new PageLink(100))
+                .getData().stream().map(Rpc::getUuidId).toList();
 
-        // the terminal SUCCESSFUL row is excluded; only the three in-flight statuses come back:
-        assertThat(inFlight).extracting(Rpc::getStatus)
-                .containsExactlyInAnyOrder(RpcStatus.QUEUED, RpcStatus.SENT, RpcStatus.DELIVERED);
+        assertThat(got).containsExactlyInAnyOrder(q, s, twoWayDel);
+    }
+
+    private UUID saveRpc(DeviceId deviceId, RpcStatus status, boolean oneway) {
+        UUID id = UUID.randomUUID();
+        Rpc toSave = rpc(id, deviceId, status, null);
+        toSave.setOneway(oneway);
+        toSave.setRequestId(null);
+        toSave.setExpirationTime(System.currentTimeMillis() + 60_000);
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, toSave);
+        return id;
     }
 
     private Rpc rpc(UUID id, DeviceId deviceId, RpcStatus status, JsonNode response) {

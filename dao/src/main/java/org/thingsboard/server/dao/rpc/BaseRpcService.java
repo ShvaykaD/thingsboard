@@ -32,7 +32,6 @@ import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.dao.service.PaginatedRemover;
 
-import java.util.Collection;
 import java.util.Optional;
 
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
@@ -111,11 +110,11 @@ public class BaseRpcService implements RpcService {
     }
 
     @Override
-    public PageData<Rpc> findAllByDeviceIdAndStatusIn(TenantId tenantId, DeviceId deviceId, Collection<RpcStatus> statuses, PageLink pageLink) {
-        log.trace("Executing findAllByDeviceIdAndStatusIn, tenantId [{}], deviceId [{}], statuses [{}], pageLink [{}]", tenantId, deviceId, statuses, pageLink);
+    public PageData<Rpc> findInFlightForReload(TenantId tenantId, DeviceId deviceId, PageLink pageLink) {
+        log.trace("Executing findInFlightForReload, tenantId [{}], deviceId [{}], pageLink [{}]", tenantId, deviceId, pageLink);
         validateId(tenantId, id -> INCORRECT_TENANT_ID + id);
         validatePageLink(pageLink);
-        return rpcDao.findAllByDeviceIdAndStatusIn(tenantId, deviceId, statuses, pageLink);
+        return rpcDao.findInFlightForReload(tenantId, deviceId, pageLink);
     }
 
     @Override

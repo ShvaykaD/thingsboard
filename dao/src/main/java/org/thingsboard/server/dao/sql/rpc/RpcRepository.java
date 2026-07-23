@@ -25,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.dao.model.sql.RpcEntity;
 
-import java.util.Collection;
 import java.util.UUID;
 
 public interface RpcRepository extends JpaRepository<RpcEntity, UUID> {
@@ -34,9 +33,14 @@ public interface RpcRepository extends JpaRepository<RpcEntity, UUID> {
 
     Page<RpcEntity> findAllByTenantIdAndDeviceIdAndStatus(UUID tenantId, UUID deviceId, RpcStatus status, Pageable pageable);
 
-    Page<RpcEntity> findAllByTenantIdAndDeviceIdAndStatusIn(UUID tenantId, UUID deviceId, Collection<RpcStatus> statuses, Pageable pageable);
-
     Page<RpcEntity> findAllByTenantId(UUID tenantId, Pageable pageable);
+
+    @Query(value = "SELECT * FROM rpc WHERE tenant_id = :tenantId AND device_id = :deviceId " +
+            "AND (status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false))",
+           countQuery = "SELECT count(*) FROM rpc WHERE tenant_id = :tenantId AND device_id = :deviceId " +
+            "AND (status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false))",
+           nativeQuery = true)
+    Page<RpcEntity> findInFlightForReload(@Param("tenantId") UUID tenantId, @Param("deviceId") UUID deviceId, Pageable pageable);
 
     @Transactional
     @Modifying

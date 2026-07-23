@@ -267,11 +267,12 @@ public class DeviceActorMessageProcessorTest {
         willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
     }
 
-    // The reload issues a single findAllByDeviceIdAndStatusIn query; the actor sorts the rows itself, so the
-    // stub just returns them all in one page regardless of order.
+    // The reload issues a single findInFlightForReload query (DB-side filters out one-way DELIVERED and
+    // terminal statuses - see JpaRpcDaoTest); the actor sorts the rows itself, so the stub just returns
+    // them all in one page regardless of order.
     private void stubInFlight(Rpc... rows) {
         willReturn(new PageData<>(List.of(rows), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatusIn(eq(tenantId), eq(deviceId), any(), any());
+                .findInFlightForReload(eq(tenantId), eq(deviceId), any());
     }
 
     private void pushViaAsyncSession() {
