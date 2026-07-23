@@ -89,7 +89,7 @@ class LtsMigrationServiceTest {
                 migration("4.2.2.2", applied),
                 migration("4.2.2.3", applied)));
 
-        service.applyMigrations("4.2.2.2", "4.2.2.3");
+        service.applyMigrations("4.2.2.2", "4.2.2.3", () -> {});
 
         // only 4.2.2.3 is in (4.2.2.2, 4.2.2.3]
         assertEquals(List.of("4.2.2.3"), applied);
@@ -106,7 +106,7 @@ class LtsMigrationServiceTest {
         LtsMigrationService service = service(List.of(
                 migration("4.2.2.3", applied), migration("4.2.2.4", applied)));
 
-        service.applyMigrations("4.2.2.2", "4.2.2.4");
+        service.applyMigrations("4.2.2.2", "4.2.2.4", () -> {});
 
         assertEquals(List.of("4.2.2.3", "4.2.2.4"), applied);
         verify(jdbcTemplate).execute("SELECT 1;");
@@ -139,7 +139,7 @@ class LtsMigrationServiceTest {
                 migration("4.3.1.2", applied),
                 migration("4.3.1.3", applied)));
 
-        service.applyMigrations("4.2.2.2", "4.3.1.3");
+        service.applyMigrations("4.2.2.2", "4.3.1.3", () -> {});
 
         assertEquals(List.of("4.3.1.2", "4.3.1.3"), applied);
         verify(schemaSettingsService, never()).updateSchemaVersion("4.2.2.3");
@@ -188,7 +188,7 @@ class LtsMigrationServiceTest {
         writeSql("4.2.2.3", "SELECT 1;");
         LtsMigrationService service = service(List.of(migration("4.2.2.3", applied)));
 
-        service.applyMigrations("4.2.2.3", "4.2.2.3");
+        service.applyMigrations("4.2.2.3", "4.2.2.3", () -> {});
 
         assertEquals(List.of(), applied);
         verify(jdbcTemplate, never()).execute(anyString());
@@ -226,7 +226,7 @@ class LtsMigrationServiceTest {
         List<String> applied = new ArrayList<>();
         LtsMigrationService service = service(List.of(migration("4.2.2.3", applied)));
 
-        service.applyMigrations("4.2.2.2", "4.2.2.3");
+        service.applyMigrations("4.2.2.2", "4.2.2.3", () -> {});
 
         assertEquals(List.of("4.2.2.3"), applied);
         verify(jdbcTemplate, never()).execute(anyString());
