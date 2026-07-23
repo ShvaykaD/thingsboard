@@ -18,6 +18,7 @@ package org.thingsboard.server.dao.sql.rpc;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.RpcId;
@@ -29,6 +30,7 @@ import org.thingsboard.server.dao.AbstractJpaDaoTest;
 import org.thingsboard.server.dao.model.sql.RpcEntity;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -41,6 +43,31 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
 
     @Autowired
     RpcUpdateRepository rpcUpdateRepository;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
+    // Mirrors org.thingsboard.server.service.install.lts.V4_3_1_4Migration.CLEANUP_BATCH_SQL exactly: this test
+    // documents (and pins) the migration's WHERE clause against a real Postgres instance, including the
+    // request::jsonb ->> 'oneway' extraction, without the dao module depending on the application module.
+    private static final String LEGACY_CLEANUP_BATCH_SQL = """
+            WITH w AS (
+              SELECT id FROM rpc WHERE id > ? ORDER BY id LIMIT ?
+            ), u AS (
+              UPDATE rpc SET status = 'EXPIRED', response = ?
+              FROM w WHERE rpc.id = w.id
+                AND rpc.request_id IS NULL
+                AND rpc.expiration_time < ?
+                AND (rpc.status = 'SENT' OR (rpc.status = 'DELIVERED' AND (rpc.request::jsonb ->> 'oneway') = 'false'))
+              RETURNING 1
+            )
+            SELECT (SELECT count(*) FROM u) AS updated_count,
+                   (SELECT id FROM w ORDER BY id DESC LIMIT 1) AS last_id
+            """;
+
+    private static final String LEGACY_CLOSE_RESPONSE = "{\"error\":\"This RPC was no longer tracked by the platform "
+            + "after a restart and could not reach a terminal state on its own. It was left stuck in a "
+            + "non-terminal state (SENT or DELIVERED) and has now been closed automatically.\"}";
 
     @Test
     public void deleteOutdated() {
@@ -212,6 +239,48 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
                 .getData().stream().map(Rpc::getUuidId).toList();
 
         assertThat(got).containsExactlyInAnyOrder(q, s, twoWayDel);
+    }
+
+    @Test
+    public void legacyBacklogCleanupClosesOnlyStuckRows() {
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        long now = System.currentTimeMillis();
+        long past = now - 60_000;
+        long future = now + 60_000;
+
+        // Legacy (request_id IS NULL) rows the cleanup MUST close:
+        UUID twoWayDeliveredPastExpiry = saveLegacy(deviceId, RpcStatus.DELIVERED, false, past, null);
+        UUID sentPastExpiry = saveLegacy(deviceId, RpcStatus.SENT, true, past, null);
+        // Rows the cleanup MUST leave untouched:
+        UUID oneWayDeliveredPastExpiry = saveLegacy(deviceId, RpcStatus.DELIVERED, true, past, null); // terminal success
+        UUID twoWayDeliveredFutureExpiry = saveLegacy(deviceId, RpcStatus.DELIVERED, false, future, null); // not expired yet
+        UUID twoWayDeliveredWithRequestId = saveLegacy(deviceId, RpcStatus.DELIVERED, false, past, 7); // tracked, not legacy
+        UUID queuedPastExpiry = saveLegacy(deviceId, RpcStatus.QUEUED, false, past, null); // never sent
+
+        Map<String, Object> result = jdbcTemplate.queryForMap(LEGACY_CLEANUP_BATCH_SQL,
+                new UUID(0L, 0L), 10_000, LEGACY_CLOSE_RESPONSE, now);
+        assertThat(((Number) result.get("updated_count")).longValue()).isEqualTo(2);
+
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, twoWayDeliveredPastExpiry).getStatus()).isEqualTo(RpcStatus.EXPIRED);
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, sentPastExpiry).getStatus()).isEqualTo(RpcStatus.EXPIRED);
+
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, oneWayDeliveredPastExpiry).getStatus()).isEqualTo(RpcStatus.DELIVERED);
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, twoWayDeliveredFutureExpiry).getStatus()).isEqualTo(RpcStatus.DELIVERED);
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, twoWayDeliveredWithRequestId).getStatus()).isEqualTo(RpcStatus.DELIVERED);
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, queuedPastExpiry).getStatus()).isEqualTo(RpcStatus.QUEUED);
+    }
+
+    // Seeds a legacy row (bypassing the entity/JPA layer to write raw request JSON) exactly as a pre-request_id
+    // server version would have left it: request_id NULL, request JSON carrying the oneway flag the cleanup's
+    // WHERE extracts via request::jsonb ->> 'oneway'.
+    private UUID saveLegacy(DeviceId deviceId, RpcStatus status, boolean oneway, long expirationTime, Integer requestId) {
+        UUID id = UUID.randomUUID();
+        String request = "{\"oneway\":" + oneway + ",\"method\":\"x\"}";
+        jdbcTemplate.update("INSERT INTO rpc (id, created_time, tenant_id, device_id, expiration_time, request, " +
+                        "response, status, request_id, oneway) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                id, System.currentTimeMillis(), TenantId.SYS_TENANT_ID.getId(), deviceId.getId(), expirationTime,
+                request, status.name(), requestId, oneway);
+        return id;
     }
 
     private UUID saveRpc(DeviceId deviceId, RpcStatus status, boolean oneway) {
