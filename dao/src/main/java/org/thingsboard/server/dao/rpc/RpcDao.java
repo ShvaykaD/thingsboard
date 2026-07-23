@@ -24,6 +24,8 @@ import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.dao.Dao;
 
+import java.util.Collection;
+
 public interface RpcDao extends Dao<Rpc> {
 
     ListenableFuture<Boolean> updateAsync(Rpc rpc);
@@ -31,6 +33,8 @@ public interface RpcDao extends Dao<Rpc> {
     PageData<Rpc> findAllByDeviceId(TenantId tenantId, DeviceId deviceId, PageLink pageLink);
 
     PageData<Rpc> findAllByDeviceIdAndStatus(TenantId tenantId, DeviceId deviceId, RpcStatus rpcStatus, PageLink pageLink);
+
+    PageData<Rpc> findAllByDeviceIdAndStatusIn(TenantId tenantId, DeviceId deviceId, Collection<RpcStatus> statuses, PageLink pageLink);
 
     PageData<Rpc> findAllRpcByTenantId(TenantId tenantId, PageLink pageLink);
 

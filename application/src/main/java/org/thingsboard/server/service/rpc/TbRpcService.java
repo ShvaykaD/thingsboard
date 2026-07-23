@@ -37,6 +37,7 @@ import org.thingsboard.server.common.msg.TbMsgMetaData;
 import org.thingsboard.server.dao.rpc.RpcService;
 import org.thingsboard.server.queue.util.TbCoreComponent;
 
+import java.util.Collection;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -121,6 +122,10 @@ public class TbRpcService {
 
     public PageData<Rpc> findAllByDeviceIdAndStatus(TenantId tenantId, DeviceId deviceId, RpcStatus rpcStatus, PageLink pageLink) {
         return rpcService.findAllByDeviceIdAndStatus(tenantId, deviceId, rpcStatus, pageLink);
+    }
+
+    public PageData<Rpc> findAllByDeviceIdAndStatusIn(TenantId tenantId, DeviceId deviceId, Collection<RpcStatus> statuses, PageLink pageLink) {
+        return rpcService.findAllByDeviceIdAndStatusIn(tenantId, deviceId, statuses, pageLink);
     }
 
 }

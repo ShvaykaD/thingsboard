@@ -42,6 +42,7 @@ import org.thingsboard.server.dao.sql.TbSqlBlockingQueueParams;
 import org.thingsboard.server.dao.sql.TbSqlBlockingQueueWrapper;
 import org.thingsboard.server.dao.util.SqlDao;
 
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.UUID;
 import java.util.function.Function;
@@ -118,6 +119,11 @@ public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao,
     @Override
     public PageData<Rpc> findAllByDeviceIdAndStatus(TenantId tenantId, DeviceId deviceId, RpcStatus rpcStatus, PageLink pageLink) {
         return DaoUtil.toPageData(rpcRepository.findAllByTenantIdAndDeviceIdAndStatus(tenantId.getId(), deviceId.getId(), rpcStatus, DaoUtil.toPageable(pageLink)));
+    }
+
+    @Override
+    public PageData<Rpc> findAllByDeviceIdAndStatusIn(TenantId tenantId, DeviceId deviceId, Collection<RpcStatus> statuses, PageLink pageLink) {
+        return DaoUtil.toPageData(rpcRepository.findAllByTenantIdAndDeviceIdAndStatusIn(tenantId.getId(), deviceId.getId(), statuses, DaoUtil.toPageable(pageLink)));
     }
 
     @Override

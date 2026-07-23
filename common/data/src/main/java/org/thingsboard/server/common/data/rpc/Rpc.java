@@ -15,6 +15,7 @@
  */
 package org.thingsboard.server.common.data.rpc;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -44,7 +45,7 @@ public class Rpc extends BaseData<RpcId> implements HasTenantId {
     private RpcStatus status;
     @Schema(description = "Additional info used in the rule engine to process the updates to the RPC state.", accessMode = Schema.AccessMode.READ_ONLY)
     private JsonNode additionalInfo;
-    @Schema(description = "Transport request id used to correlate the device's response to this RPC.", accessMode = Schema.AccessMode.READ_ONLY)
+    @JsonIgnore // internal transport correlation id used only for actor-side recovery; kept out of the public API and rule-engine payload
     private Integer requestId;
 
     public Rpc() {

@@ -66,6 +66,8 @@ public class DeviceActorMessageProcessorTest {
     DeviceId deviceId = DeviceId.fromString("78bf9b26-74ef-4af2-9cfb-ad6cf24ad2ec");
 
     DeviceActorMessageProcessor processor;
+    TbRpcService rpcService;
+    TbCoreToTransportService toTransport;
 
     @Before
     public void setUp() {
@@ -109,9 +111,7 @@ public class DeviceActorMessageProcessorTest {
 
     @Test
     public void persistsRequestIdOnCreate() {
-        TbRpcService rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+        mockRpcInfra();
 
         TbActorCtx ctx = mock(TbActorCtx.class);
         ToDeviceRpcRequest request = new ToDeviceRpcRequest(UUID.randomUUID(), tenantId, deviceId,
@@ -126,32 +126,11 @@ public class DeviceActorMessageProcessorTest {
 
     @Test
     public void reloadedDeliveredRpcMatchesDeviceResponse() {
-        TbRpcService rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        TbCoreDeviceRpcService coreRpc = mock(TbCoreDeviceRpcService.class);
-        willReturn(coreRpc).given(systemContext).getTbCoreDeviceRpcService();
-        willReturn("svc").given(systemContext).getServiceId();
+        mockRpcInfra();
+        Rpc row = inFlightRow(RpcStatus.DELIVERED, 7, System.currentTimeMillis());
+        stubInFlight(row);
 
-        UUID rpcUuid = UUID.randomUUID();
-        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, false,
-                System.currentTimeMillis() + 60_000, new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
-        Rpc row = new Rpc(new RpcId(rpcUuid));
-        row.setCreatedTime(System.currentTimeMillis());
-        row.setExpirationTime(System.currentTimeMillis() + 60_000);
-        row.setStatus(RpcStatus.DELIVERED);
-        row.setRequestId(7);
-        row.setRequest(JacksonUtil.valueToTree(req));
-
-        // QUEUED/SENT empty, DELIVERED returns our row:
-        willReturn(new PageData<>(List.of(), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.QUEUED), any());
-        willReturn(new PageData<>(List.of(), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
-        willReturn(new PageData<>(List.of(row), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.DELIVERED), any());
-
-        TbActorCtx ctx = mock(TbActorCtx.class);
-        processor.init(ctx);
+        processor.init(mock(TbActorCtx.class));
 
         // device replies with the OLD id 7:
         processor.processRpcResponses(sessionInfoProto(), ToDeviceRpcResponseMsg.newBuilder()
@@ -165,63 +144,43 @@ public class DeviceActorMessageProcessorTest {
 
     @Test
     public void oneWayDeliveredRowNotReExpiredOnReload() {
-        TbRpcService rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
-        willReturn("svc").given(systemContext).getServiceId();
-
-        UUID rpcUuid = UUID.randomUUID();
+        mockRpcInfra();
         long pastExp = System.currentTimeMillis() - 60_000; // already expired
-        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, true /*oneway*/,
-                pastExp, new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
-        Rpc row = new Rpc(new RpcId(rpcUuid));
-        row.setCreatedTime(System.currentTimeMillis() - 120_000);
-        row.setExpirationTime(pastExp);
-        row.setStatus(RpcStatus.DELIVERED);
-        row.setRequestId(9);
-        row.setRequest(JacksonUtil.valueToTree(req));
+        Rpc row = expiredRow(RpcStatus.DELIVERED, 9, true /*oneway*/, pastExp);
+        stubInFlight(row);
 
-        // QUEUED/SENT empty, DELIVERED returns our past-due one-way row:
-        willReturn(new PageData<>(List.of(), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.QUEUED), any());
-        willReturn(new PageData<>(List.of(), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
-        willReturn(new PageData<>(List.of(row), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.DELIVERED), any());
-
-        TbActorCtx ctx = mock(TbActorCtx.class);
-        processor.init(ctx);
+        processor.init(mock(TbActorCtx.class));
 
         // terminal one-way DELIVERED row, past expiry: must be left untouched, no EXPIRED overwrite
         Mockito.verify(rpcService, Mockito.never()).update(any(), any());
     }
 
     @Test
+    public void pastExpiryTwoWaySentRowIsExpiredOnReload() {
+        mockRpcInfra();
+        long pastExp = System.currentTimeMillis() - 60_000; // already expired
+        Rpc row = expiredRow(RpcStatus.SENT, 3, false /*two-way*/, pastExp);
+        stubInFlight(row);
+
+        processor.init(mock(TbActorCtx.class));
+
+        // non-terminal (two-way SENT) row past its expiry must be force-updated to EXPIRED on reload:
+        ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
+        verify(rpcService).update(eq(tenantId), captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(RpcStatus.EXPIRED);
+    }
+
+    @Test
     public void seedsCounterPastHighestReloadedId() {
-        TbRpcService rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
-        willReturn("svc").given(systemContext).getServiceId();
+        mockRpcInfra();
+        stubInFlight(inFlightRow(RpcStatus.SENT, 5, System.currentTimeMillis()));
 
-        Rpc row = new Rpc(new RpcId(UUID.randomUUID()));
-        row.setCreatedTime(System.currentTimeMillis());
-        row.setExpirationTime(System.currentTimeMillis() + 60_000);
-        row.setStatus(RpcStatus.SENT);
-        row.setRequestId(5);
-        row.setRequest(JacksonUtil.valueToTree(new ToDeviceRpcRequest(row.getUuidId(), tenantId, deviceId,
-                false, row.getExpirationTime(), new ToDeviceRpcRequestBody("m", "{}"), true, null, null)));
-        stubReload(rpcService, RpcStatus.QUEUED); // empty
-        stubReload(rpcService, RpcStatus.DELIVERED); // empty
-        willReturn(new PageData<>(List.of(row), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
-
-        TbActorCtx ctx = mock(TbActorCtx.class);
-        processor.init(ctx);
+        processor.init(mock(TbActorCtx.class));
 
         // next brand-new persistent RPC must get id 6, not 0:
         ToDeviceRpcRequest req = new ToDeviceRpcRequest(UUID.randomUUID(), tenantId, deviceId, false,
                 System.currentTimeMillis() + 60_000, new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
-        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", req));
+        processor.processRpcRequest(mock(TbActorCtx.class), new ToDeviceRpcRequestActorMsg("svc", req));
 
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
         verify(rpcService).create(eq(tenantId), captor.capture());
@@ -230,119 +189,58 @@ public class DeviceActorMessageProcessorTest {
 
     @Test
     public void resubscribeReSendsUndeliveredButNotDelivered() {
-        TbRpcService rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
-        willReturn("svc").given(systemContext).getServiceId();
-        TbCoreToTransportService toTransport = mock(TbCoreToTransportService.class);
-        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
-
-        Rpc sent = inFlightRow(RpcStatus.SENT, 6, 1000L);        // undelivered
-        Rpc delivered = inFlightRow(RpcStatus.DELIVERED, 5, 2000L);
-        stubReload(rpcService, RpcStatus.QUEUED);
-        willReturn(new PageData<>(List.of(sent), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
-        willReturn(new PageData<>(List.of(delivered), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.DELIVERED), any());
+        mockRpcInfra();
+        stubInFlight(inFlightRow(RpcStatus.SENT, 6, 1000L),          // undelivered
+                inFlightRow(RpcStatus.DELIVERED, 5, 2000L));
         processor.init(mock(TbActorCtx.class));
 
-        // seed an ASYNC session so sendPendingRequests takes the forEach branch, then push directly:
-        UUID sessionId = UUID.randomUUID();
-        SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
-        processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
-        processor.rpcSubscriptions.put(sessionId, sessionInfo);
-        processor.sendPendingRequests(sessionId, "svc");
+        pushViaAsyncSession();
 
-        // sendToTransport wraps the request in a ToTransportMsg and calls the 2-arg process(nodeId, msg):
-        ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
-        verify(toTransport, atLeastOnce()).process(any(), captor.capture());
-        assertThat(captor.getAllValues())
-                .extracting(m -> m.getToDeviceRequest().getRequestId())
-                .contains(6).doesNotContain(5); // undelivered re-sent, delivered not
+        // undelivered re-sent, delivered not:
+        assertThat(publishedRequestIds()).contains(6).doesNotContain(5);
     }
 
     @Test
     public void oneWaySentRowIsRePublishedOnReload() {
-        TbRpcService rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
-        willReturn("svc").given(systemContext).getServiceId();
-        TbCoreToTransportService toTransport = mock(TbCoreToTransportService.class);
-        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
-
-        Rpc onewaySent = inFlightRow(RpcStatus.SENT, 6, 1000L, true); // one-way, QoS-1 publish->PUBACK window
-        stubReload(rpcService, RpcStatus.QUEUED);
-        stubReload(rpcService, RpcStatus.DELIVERED);
-        willReturn(new PageData<>(List.of(onewaySent), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.SENT), any());
+        mockRpcInfra();
+        stubInFlight(inFlightRow(RpcStatus.SENT, 6, 1000L, true)); // one-way, QoS-1 publish->PUBACK window
         processor.init(mock(TbActorCtx.class));
 
-        // seed an ASYNC session so sendPendingRequests takes the forEach branch, then push directly:
-        UUID sessionId = UUID.randomUUID();
-        SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
-        processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
-        processor.rpcSubscriptions.put(sessionId, sessionInfo);
-        processor.sendPendingRequests(sessionId, "svc");
+        pushViaAsyncSession();
 
         // one-way SENT is no longer skipped on reload — it must be re-published to the device:
-        ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
-        verify(toTransport, atLeastOnce()).process(any(), captor.capture());
-        assertThat(captor.getAllValues())
-                .extracting(m -> m.getToDeviceRequest().getRequestId())
-                .contains(6);
+        assertThat(publishedRequestIds()).contains(6);
     }
 
     @Test
     public void legacyNullRequestIdRowReloadsWithoutNpe() {
-        TbRpcService rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
-        willReturn("svc").given(systemContext).getServiceId();
-        TbCoreToTransportService toTransport = mock(TbCoreToTransportService.class);
-        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
+        mockRpcInfra();
+        stubInFlight(legacyQueuedRow(System.currentTimeMillis())); // legacy pre-migration row: null requestId
+        processor.init(mock(TbActorCtx.class)); // must not NPE despite the null persisted requestId
 
-        UUID rpcUuid = UUID.randomUUID();
-        long exp = System.currentTimeMillis() + 60_000;
-        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, false, exp,
-                new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
-        Rpc legacyRow = new Rpc(new RpcId(rpcUuid));
-        legacyRow.setCreatedTime(System.currentTimeMillis());
-        legacyRow.setExpirationTime(exp);
-        legacyRow.setStatus(RpcStatus.QUEUED);
-        legacyRow.setRequestId(null); // legacy pre-migration row: no persisted requestId
-        legacyRow.setRequest(JacksonUtil.valueToTree(req));
-
-        willReturn(new PageData<>(List.of(legacyRow), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.QUEUED), any());
-        stubReload(rpcService, RpcStatus.SENT);
-        stubReload(rpcService, RpcStatus.DELIVERED);
-
-        TbActorCtx ctx = mock(TbActorCtx.class);
-        processor.init(ctx); // must not NPE despite the null persisted requestId
-
-        UUID sessionId = UUID.randomUUID();
-        SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
-        processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
-        processor.rpcSubscriptions.put(sessionId, sessionInfo);
-        processor.sendPendingRequests(sessionId, "svc");
+        pushViaAsyncSession();
 
         // fresh-id fallback (rpcSeq, starting at 0) was assigned and the row was registered/re-published:
-        ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
-        verify(toTransport, atLeastOnce()).process(any(), captor.capture());
-        assertThat(captor.getAllValues())
-                .extracting(m -> m.getToDeviceRequest().getRequestId())
-                .contains(0);
+        assertThat(publishedRequestIds()).contains(0);
+    }
+
+    @Test
+    public void legacyNullAndReusedIdDoNotCollideOnReload() {
+        mockRpcInfra();
+        // a legacy row (null id, older) and a post-migration row that reused id 0 (newer) in the SAME batch:
+        stubInFlight(legacyQueuedRow(1000L), inFlightRow(RpcStatus.QUEUED, 0, 2000L));
+
+        processor.init(mock(TbActorCtx.class));
+        pushViaAsyncSession();
+
+        // the legacy row's fallback id must be seeded past the reused id 0, so both re-publish under distinct
+        // ids (0 stays 0, the legacy row gets 1) — neither clobbers the other in the pending map:
+        assertThat(publishedRequestIds()).containsExactlyInAnyOrder(0, 1);
     }
 
     @Test
     public void nullRequestRowIsSkippedWithoutAbortingReload() {
-        TbRpcService rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
-        willReturn("svc").given(systemContext).getServiceId();
-        TbCoreToTransportService toTransport = mock(TbCoreToTransportService.class);
-        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
-
+        mockRpcInfra();
         // corrupt/legacy row whose request JSON deserializes to null — processed FIRST (earlier createdTime):
         Rpc badRow = new Rpc(new RpcId(UUID.randomUUID()));
         badRow.setCreatedTime(999L);
@@ -350,27 +248,44 @@ public class DeviceActorMessageProcessorTest {
         badRow.setStatus(RpcStatus.QUEUED);
         badRow.setRequestId(7);
         badRow.setRequest(null); // JacksonUtil.convertValue(null, ...) returns null -> restore must skip, not NPE
-        Rpc goodRow = inFlightRow(RpcStatus.QUEUED, 9, 1000L);
-        willReturn(new PageData<>(List.of(badRow, goodRow), 1, 0, false)).given(rpcService)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.QUEUED), any());
-        stubReload(rpcService, RpcStatus.SENT);
-        stubReload(rpcService, RpcStatus.DELIVERED);
+        stubInFlight(badRow, inFlightRow(RpcStatus.QUEUED, 9, 1000L));
 
         processor.init(mock(TbActorCtx.class)); // must not NPE on the null-request row
 
+        pushViaAsyncSession();
+
+        // the bad row is silently skipped; the following good row still restores and re-publishes:
+        assertThat(publishedRequestIds()).contains(9).doesNotContain(7);
+    }
+
+    private void mockRpcInfra() {
+        rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+        willReturn("svc").given(systemContext).getServiceId();
+        toTransport = mock(TbCoreToTransportService.class);
+        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
+    }
+
+    // The reload issues a single findAllByDeviceIdAndStatusIn query; the actor sorts the rows itself, so the
+    // stub just returns them all in one page regardless of order.
+    private void stubInFlight(Rpc... rows) {
+        willReturn(new PageData<>(List.of(rows), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatusIn(eq(tenantId), eq(deviceId), any(), any());
+    }
+
+    private void pushViaAsyncSession() {
         UUID sessionId = UUID.randomUUID();
         SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
         processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
         processor.rpcSubscriptions.put(sessionId, sessionInfo);
         processor.sendPendingRequests(sessionId, "svc");
+    }
 
-        // the bad row is silently skipped; the following good row still restores and re-publishes:
+    private List<Integer> publishedRequestIds() {
         ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
         verify(toTransport, atLeastOnce()).process(any(), captor.capture());
-        assertThat(captor.getAllValues())
-                .extracting(m -> m.getToDeviceRequest().getRequestId())
-                .contains(9)
-                .doesNotContain(7);
+        return captor.getAllValues().stream().map(m -> m.getToDeviceRequest().getRequestId()).toList();
     }
 
     private Rpc inFlightRow(RpcStatus status, int requestId, long createdTime) {
@@ -378,22 +293,33 @@ public class DeviceActorMessageProcessorTest {
     }
 
     private Rpc inFlightRow(RpcStatus status, int requestId, long createdTime, boolean oneway) {
-        UUID rpcUuid = UUID.randomUUID();
         long exp = System.currentTimeMillis() + 60_000;
-        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, oneway, exp,
-                new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
-        Rpc rpc = new Rpc(new RpcId(rpcUuid));
-        rpc.setCreatedTime(createdTime);
-        rpc.setExpirationTime(exp);
-        rpc.setStatus(status);
+        Rpc rpc = row(UUID.randomUUID(), status, createdTime, exp, oneway);
         rpc.setRequestId(requestId);
-        rpc.setRequest(JacksonUtil.valueToTree(req));
         return rpc;
     }
 
-    private void stubReload(TbRpcService s, RpcStatus st) {
-        willReturn(new PageData<>(List.of(), 1, 0, false)).given(s)
-                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(st), any());
+    private Rpc expiredRow(RpcStatus status, int requestId, boolean oneway, long pastExp) {
+        Rpc rpc = row(UUID.randomUUID(), status, System.currentTimeMillis() - 120_000, pastExp, oneway);
+        rpc.setRequestId(requestId);
+        return rpc;
+    }
+
+    private Rpc legacyQueuedRow(long createdTime) {
+        Rpc rpc = row(UUID.randomUUID(), RpcStatus.QUEUED, createdTime, System.currentTimeMillis() + 60_000, false);
+        rpc.setRequestId(null); // pre-migration row: no persisted requestId
+        return rpc;
+    }
+
+    private Rpc row(UUID rpcUuid, RpcStatus status, long createdTime, long expirationTime, boolean oneway) {
+        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, oneway, expirationTime,
+                new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
+        Rpc rpc = new Rpc(new RpcId(rpcUuid));
+        rpc.setCreatedTime(createdTime);
+        rpc.setExpirationTime(expirationTime);
+        rpc.setStatus(status);
+        rpc.setRequest(JacksonUtil.valueToTree(req));
+        return rpc;
     }
 
     private SessionInfoProto sessionInfoProto() {

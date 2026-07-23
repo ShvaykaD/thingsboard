@@ -22,6 +22,7 @@ import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.RpcId;
 import org.thingsboard.server.common.data.id.TenantId;
+import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.dao.AbstractJpaDaoTest;
@@ -187,6 +188,22 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
 
         Rpc loaded = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
         assertThat(loaded.getRequestId()).isEqualTo(42);
+    }
+
+    @Test
+    public void findAllByDeviceIdAndStatusInReturnsOnlyMatchingStatuses() {
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.QUEUED, null));
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.SENT, null));
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.DELIVERED, null));
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.SUCCESSFUL, null));
+
+        List<Rpc> inFlight = rpcDao.findAllByDeviceIdAndStatusIn(TenantId.SYS_TENANT_ID, deviceId,
+                List.of(RpcStatus.QUEUED, RpcStatus.SENT, RpcStatus.DELIVERED), new PageLink(100)).getData();
+
+        // the terminal SUCCESSFUL row is excluded; only the three in-flight statuses come back:
+        assertThat(inFlight).extracting(Rpc::getStatus)
+                .containsExactlyInAnyOrder(RpcStatus.QUEUED, RpcStatus.SENT, RpcStatus.DELIVERED);
     }
 
     private Rpc rpc(UUID id, DeviceId deviceId, RpcStatus status, JsonNode response) {

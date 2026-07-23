@@ -25,6 +25,8 @@ import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.dao.entity.EntityDaoService;
 
+import java.util.Collection;
+
 public interface RpcService extends EntityDaoService {
 
     Rpc save(Rpc rpc);
@@ -42,4 +44,6 @@ public interface RpcService extends EntityDaoService {
     PageData<Rpc> findAllByDeviceId(TenantId tenantId, DeviceId deviceId, PageLink pageLink);
 
     PageData<Rpc> findAllByDeviceIdAndStatus(TenantId tenantId, DeviceId deviceId, RpcStatus rpcStatus, PageLink pageLink);
+
+    PageData<Rpc> findAllByDeviceIdAndStatusIn(TenantId tenantId, DeviceId deviceId, Collection<RpcStatus> statuses, PageLink pageLink);
 }

@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.dao.model.sql.RpcEntity;
 
+import java.util.Collection;
 import java.util.UUID;
 
 public interface RpcRepository extends JpaRepository<RpcEntity, UUID> {
@@ -32,6 +33,8 @@ public interface RpcRepository extends JpaRepository<RpcEntity, UUID> {
     Page<RpcEntity> findAllByTenantIdAndDeviceId(UUID tenantId, UUID deviceId, Pageable pageable);
 
     Page<RpcEntity> findAllByTenantIdAndDeviceIdAndStatus(UUID tenantId, UUID deviceId, RpcStatus status, Pageable pageable);
+
+    Page<RpcEntity> findAllByTenantIdAndDeviceIdAndStatusIn(UUID tenantId, UUID deviceId, Collection<RpcStatus> statuses, Pageable pageable);
 
     Page<RpcEntity> findAllByTenantId(UUID tenantId, Pageable pageable);
 
