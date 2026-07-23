@@ -333,6 +333,45 @@ public class DeviceActorMessageProcessorTest {
                 .contains(0);
     }
 
+    @Test
+    public void nullRequestRowIsSkippedWithoutAbortingReload() {
+        TbRpcService rpcService = mock(TbRpcService.class);
+        willReturn(rpcService).given(systemContext).getTbRpcService();
+        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
+        willReturn("svc").given(systemContext).getServiceId();
+        TbCoreToTransportService toTransport = mock(TbCoreToTransportService.class);
+        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
+
+        // corrupt/legacy row whose request JSON deserializes to null — processed FIRST (earlier createdTime):
+        Rpc badRow = new Rpc(new RpcId(UUID.randomUUID()));
+        badRow.setCreatedTime(999L);
+        badRow.setExpirationTime(System.currentTimeMillis() + 60_000);
+        badRow.setStatus(RpcStatus.QUEUED);
+        badRow.setRequestId(7);
+        badRow.setRequest(null); // JacksonUtil.convertValue(null, ...) returns null -> restore must skip, not NPE
+        Rpc goodRow = inFlightRow(RpcStatus.QUEUED, 9, 1000L);
+        willReturn(new PageData<>(List.of(badRow, goodRow), 1, 0, false)).given(rpcService)
+                .findAllByDeviceIdAndStatus(eq(tenantId), eq(deviceId), eq(RpcStatus.QUEUED), any());
+        stubReload(rpcService, RpcStatus.SENT);
+        stubReload(rpcService, RpcStatus.DELIVERED);
+
+        processor.init(mock(TbActorCtx.class)); // must not NPE on the null-request row
+
+        UUID sessionId = UUID.randomUUID();
+        SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
+        processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
+        processor.rpcSubscriptions.put(sessionId, sessionInfo);
+        processor.sendPendingRequests(sessionId, "svc");
+
+        // the bad row is silently skipped; the following good row still restores and re-publishes:
+        ArgumentCaptor<ToTransportMsg> captor = ArgumentCaptor.forClass(ToTransportMsg.class);
+        verify(toTransport, atLeastOnce()).process(any(), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getAllValues())
+                .extracting(m -> m.getToDeviceRequest().getRequestId())
+                .contains(9)
+                .doesNotContain(7);
+    }
+
     private Rpc inFlightRow(RpcStatus status, int requestId, long createdTime) {
         return inFlightRow(status, requestId, createdTime, false);
     }
