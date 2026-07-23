@@ -315,6 +315,10 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
 
     private void restorePendingRpc(TbActorCtx ctx, Rpc rpc) {
         ToDeviceRpcRequest msg = JacksonUtil.convertValue(rpc.getRequest(), ToDeviceRpcRequest.class);
+        if (msg == null) {
+            log.error("[{}] Failed to restore RPC request [{}]", deviceId, rpc.getId());
+            return;
+        }
         RpcStatus status = rpc.getStatus();
         if (msg.isOneway() && status == RpcStatus.DELIVERED) {
             return; // one-way DELIVERED is the terminal success state — leave untouched, never re-publish.
