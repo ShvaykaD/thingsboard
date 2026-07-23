@@ -38,6 +38,7 @@ import java.util.UUID;
 import static org.thingsboard.server.dao.model.ModelConstants.RPC_ADDITIONAL_INFO;
 import static org.thingsboard.server.dao.model.ModelConstants.RPC_DEVICE_ID;
 import static org.thingsboard.server.dao.model.ModelConstants.RPC_EXPIRATION_TIME;
+import static org.thingsboard.server.dao.model.ModelConstants.RPC_ONEWAY;
 import static org.thingsboard.server.dao.model.ModelConstants.RPC_REQUEST;
 import static org.thingsboard.server.dao.model.ModelConstants.RPC_REQUEST_ID;
 import static org.thingsboard.server.dao.model.ModelConstants.RPC_RESPONSE;
@@ -79,6 +80,9 @@ public class RpcEntity extends BaseSqlEntity<Rpc> implements BaseEntity<Rpc> {
     @Column(name = RPC_REQUEST_ID)
     private Integer requestId;
 
+    @Column(name = RPC_ONEWAY)
+    private Boolean oneway;
+
     public RpcEntity() {
         super();
     }
@@ -94,6 +98,7 @@ public class RpcEntity extends BaseSqlEntity<Rpc> implements BaseEntity<Rpc> {
         this.status = rpc.getStatus();
         this.additionalInfo = rpc.getAdditionalInfo();
         this.requestId = rpc.getRequestId();
+        this.oneway = rpc.getOneway();
     }
 
     @Override
@@ -108,6 +113,7 @@ public class RpcEntity extends BaseSqlEntity<Rpc> implements BaseEntity<Rpc> {
         rpc.setStatus(status);
         rpc.setAdditionalInfo(additionalInfo);
         rpc.setRequestId(requestId);
+        rpc.setOneway(oneway);
         return rpc;
     }
 }

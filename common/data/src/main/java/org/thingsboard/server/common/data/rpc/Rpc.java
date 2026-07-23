@@ -47,6 +47,8 @@ public class Rpc extends BaseData<RpcId> implements HasTenantId {
     private JsonNode additionalInfo;
     @JsonIgnore // internal transport correlation id used only for actor-side recovery; kept out of the public API and rule-engine payload
     private Integer requestId;
+    @JsonIgnore // internal flag mirrored from the request JSON; used only to let actor-side reload filter out terminal one-way DELIVERED rows
+    private Boolean oneway;
 
     public Rpc() {
         super();
@@ -66,6 +68,7 @@ public class Rpc extends BaseData<RpcId> implements HasTenantId {
         this.status = rpc.getStatus();
         this.additionalInfo = rpc.getAdditionalInfo();
         this.requestId = rpc.getRequestId();
+        this.oneway = rpc.getOneway();
     }
 
     @Schema(description = "JSON object with the rpc Id. Referencing non-existing rpc Id will cause error.")

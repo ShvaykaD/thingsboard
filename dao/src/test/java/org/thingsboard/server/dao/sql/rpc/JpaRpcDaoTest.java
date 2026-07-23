@@ -191,6 +191,15 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
+    public void onewayRoundTripsThroughSaveAndLoad() {
+        UUID id = UUID.randomUUID();
+        Rpc toSave = rpc(id, new DeviceId(UUID.randomUUID()), RpcStatus.SENT, null);
+        toSave.setOneway(true);
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, toSave);
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id).getOneway()).isTrue();
+    }
+
+    @Test
     public void findAllByDeviceIdAndStatusInReturnsOnlyMatchingStatuses() {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(UUID.randomUUID(), deviceId, RpcStatus.QUEUED, null));

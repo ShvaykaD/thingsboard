@@ -274,6 +274,7 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         rpc.setStatus(status);
         rpc.setAdditionalInfo(getAdditionalInfo(request));
         rpc.setRequestId(requestId);
+        rpc.setOneway(request.isOneway());
         return rpc;
     }
 

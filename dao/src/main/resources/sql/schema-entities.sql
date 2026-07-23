@@ -783,7 +783,8 @@ CREATE TABLE IF NOT EXISTS rpc (
     response varchar(10000000),
     additional_info varchar(10000000),
     status varchar(255) NOT NULL,
-    request_id integer
+    request_id integer,
+    oneway boolean
 );
 
 CREATE OR REPLACE FUNCTION to_uuid(IN entity_id varchar, OUT uuid_id uuid) AS
