@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.thingsboard.common.util.JacksonUtil;
+import org.thingsboard.server.actors.device.DeviceActorMessageProcessor;
 import org.thingsboard.server.queue.util.TbCoreComponent;
 
 import java.util.UUID;
@@ -52,10 +53,8 @@ public class V4_3_1_4Migration implements LtsMigration {
 
     // Same wording as the device actor's LEGACY_UNTRACKED_RESPONSE (DeviceActorMessageProcessor), so a row closed
     // by this one-time backfill reads identically to one closed live by the actor on reload.
-    static final String LEGACY_CLOSE_RESPONSE = JacksonUtil.newObjectNode().put("error",
-            "This RPC was no longer tracked by the platform after a restart and could not reach a terminal state " +
-                    "on its own. It was left stuck in a non-terminal state (SENT or DELIVERED) and has now been " +
-                    "closed automatically.").toString();
+    static final String LEGACY_CLOSE_RESPONSE = JacksonUtil.newObjectNode()
+            .put("error", DeviceActorMessageProcessor.LEGACY_UNTRACKED_MESSAGE).toString();
 
     // Keyset-paginated batch: window of ids > cursor, close the matching legacy rows in that window, report how
     // many closed and the window's max id (the next cursor). Self-contained CTE so a single round trip both

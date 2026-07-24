@@ -115,10 +115,14 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
 
-    private static final JsonNode LEGACY_UNTRACKED_RESPONSE = JacksonUtil.newObjectNode().put("error",
+    // Shared with V4_3_1_4Migration.LEGACY_CLOSE_RESPONSE so a row closed by the one-time backfill reads
+    // identically to one closed live by this actor on reload.
+    public static final String LEGACY_UNTRACKED_MESSAGE =
             "This RPC was no longer tracked by the platform after a restart and could not reach a terminal state " +
                     "on its own. It was left stuck in a non-terminal state (SENT or DELIVERED) and has now been " +
-                    "closed automatically.");
+                    "closed automatically.";
+
+    private static final JsonNode LEGACY_UNTRACKED_RESPONSE = JacksonUtil.newObjectNode().put("error", LEGACY_UNTRACKED_MESSAGE);
 
     final TenantId tenantId;
     final DeviceId deviceId;

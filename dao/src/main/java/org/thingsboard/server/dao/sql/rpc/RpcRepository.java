@@ -29,16 +29,18 @@ import java.util.UUID;
 
 public interface RpcRepository extends JpaRepository<RpcEntity, UUID> {
 
+    // Must stay identical to the idx_rpc_in_flight predicate (schema-entities-idx.sql / 4.3.1.4/schema_update.sql)
+    // so the planner can use that index.
+    String IN_FLIGHT_RELOAD_PREDICATE = "status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false)";
+
     Page<RpcEntity> findAllByTenantIdAndDeviceId(UUID tenantId, UUID deviceId, Pageable pageable);
 
     Page<RpcEntity> findAllByTenantIdAndDeviceIdAndStatus(UUID tenantId, UUID deviceId, RpcStatus status, Pageable pageable);
 
     Page<RpcEntity> findAllByTenantId(UUID tenantId, Pageable pageable);
 
-    @Query(value = "SELECT * FROM rpc WHERE tenant_id = :tenantId AND device_id = :deviceId " +
-            "AND (status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false))",
-           countQuery = "SELECT count(*) FROM rpc WHERE tenant_id = :tenantId AND device_id = :deviceId " +
-            "AND (status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false))",
+    @Query(value = "SELECT * FROM rpc WHERE tenant_id = :tenantId AND device_id = :deviceId AND (" + IN_FLIGHT_RELOAD_PREDICATE + ")",
+           countQuery = "SELECT count(*) FROM rpc WHERE tenant_id = :tenantId AND device_id = :deviceId AND (" + IN_FLIGHT_RELOAD_PREDICATE + ")",
            nativeQuery = true)
     Page<RpcEntity> findInFlightForReload(@Param("tenantId") UUID tenantId, @Param("deviceId") UUID deviceId, Pageable pageable);
 

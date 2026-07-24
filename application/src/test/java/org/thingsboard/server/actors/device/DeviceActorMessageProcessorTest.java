@@ -59,10 +59,10 @@ import static org.mockito.Mockito.verify;
 
 public class DeviceActorMessageProcessorTest {
 
-    public static final int MAX_CONCURRENT_SESSIONS_PER_DEVICE = 10;
+    private static final int MAX_CONCURRENT_SESSIONS_PER_DEVICE = 1;
     ActorSystemContext systemContext;
     DeviceService deviceService;
-    TenantId tenantId = TenantId.SYS_TENANT_ID;
+    TenantId tenantId = TenantId.fromUUID(UUID.fromString("ae651b45-2a92-4bdf-9d56-faede44eafb8"));
     DeviceId deviceId = DeviceId.fromString("78bf9b26-74ef-4af2-9cfb-ad6cf24ad2ec");
 
     DeviceActorMessageProcessor processor;

@@ -20,6 +20,7 @@ ALTER TABLE rpc ADD COLUMN IF NOT EXISTS request_id integer;
 
 ALTER TABLE rpc ADD COLUMN IF NOT EXISTS oneway boolean;
 
+-- keep in sync with dao/src/main/resources/sql/schema-entities-idx.sql (idx_rpc_in_flight)
 CREATE INDEX IF NOT EXISTS idx_rpc_in_flight ON rpc (tenant_id, device_id)
     WHERE status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false);
 
