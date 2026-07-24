@@ -231,6 +231,19 @@ class LtsMigrationServiceTest {
     }
 
     @Test
+    void runDataMigrationsAppliesAndAppliesAfterCommitButNeverRunsSqlOrRecords() throws Exception {
+        List<String> sequence = new ArrayList<>();
+        writeSql("4.2.2.3", "SELECT 1;");
+        LtsMigrationService service = service(List.of(migrationWithAfterCommit("4.2.2.3", sequence)));
+
+        service.runDataMigrations("4.2.2.2", "4.2.2.3");
+
+        assertEquals(List.of("apply(4.2.2.3)", "applyAfterCommit(4.2.2.3)"), sequence);
+        verify(jdbcTemplate, never()).execute(anyString());
+        verify(schemaSettingsService, never()).updateSchemaVersion(anyString());
+    }
+
+    @Test
     void migrationWithoutSqlFileStillAppliesAndRecords() {
         List<String> applied = new ArrayList<>();
         LtsMigrationService service = service(List.of(migration("4.2.2.3", applied)));

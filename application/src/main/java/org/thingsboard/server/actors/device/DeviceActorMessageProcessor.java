@@ -248,7 +248,7 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
             log.debug("[{}] RPC command response sent [{}][{}]!", deviceId, rpcId, requestId);
             systemContext.getTbCoreDeviceRpcService().processRpcResponseFromDeviceActor(new FromDeviceRpcResponse(rpcId, null, null));
         } else {
-            registerPendingRpcRequest(context, msg, requestId, sent, false, timeout, createdTime);
+            registerPendingRpcRequest(context, msg, requestId, sent, timeout, createdTime);
         }
         String rpcSent = sent ? "sent!" : "NOT sent!";
         log.debug("[{}][{}][{}] RPC request is {}", deviceId, rpcId, requestId, rpcSent);
@@ -393,6 +393,10 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
                 }
             }
         }
+    }
+
+    private void registerPendingRpcRequest(TbActorCtx context, ToDeviceRpcRequestActorMsg actorMsg, int requestId, boolean sent, long timeout, long createdTime) {
+        registerPendingRpcRequest(context, actorMsg, requestId, sent, false, timeout, createdTime);
     }
 
     private void registerPendingRpcRequest(TbActorCtx context, ToDeviceRpcRequestActorMsg actorMsg, int requestId, boolean sent, boolean delivered, long timeout, long createdTime) {
