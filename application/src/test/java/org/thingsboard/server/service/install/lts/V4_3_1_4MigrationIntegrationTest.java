@@ -19,8 +19,7 @@ import org.junit.After;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.test.context.TestPropertySource;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.controller.AbstractControllerTest;
@@ -39,12 +38,13 @@ import static org.junit.Assert.assertNotNull;
  * termination) actually exercises more than one window -- not just the single-batch happy path.
  */
 @DaoSqlTest
+@TestPropertySource(properties = "install.rpc_legacy_cleanup_batch_size=2")
 public class V4_3_1_4MigrationIntegrationTest extends AbstractControllerTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
-    private PlatformTransactionManager transactionManager;
+    private V4_3_1_4Migration migration;
 
     private final List<UUID> seededIds = new ArrayList<>();
 
@@ -58,12 +58,11 @@ public class V4_3_1_4MigrationIntegrationTest extends AbstractControllerTest {
 
     @Test
     public void batchLoopClosesAllStuckRowsAcrossMultipleWindowsAndLeavesOthersUntouched() {
-        V4_3_1_4Migration migration = new V4_3_1_4Migration(jdbcTemplate, transactionManager);
-        // Force a tiny batch size (< the 5 stuck rows seeded below) so applyAfterCommit() must run several
-        // keyset-paginated windows, proving the cursor actually advances across batches instead of just once.
-        ReflectionTestUtils.setField(migration, "batchSize", 2);
+        // batchSize is wired to 2 via the class-level @TestPropertySource (< the 5 stuck rows seeded below), so
+        // applyAfterCommit() must run several keyset-paginated windows, proving the cursor actually advances
+        // across batches instead of just once.
 
-        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        DeviceId deviceId = new DeviceId(UUID.fromString("39813cdc-a1ae-47c7-92af-25ec0a1fc303"));
         long now = System.currentTimeMillis();
         long past = now - 60_000;
         long future = now + 60_000;
@@ -71,17 +70,17 @@ public class V4_3_1_4MigrationIntegrationTest extends AbstractControllerTest {
         // Legacy (request_id IS NULL) rows the backfill MUST close -- 5 rows against a batch size of 2, so the
         // loop must span 3 windows (2 + 2 + 1) for the cursor logic to be genuinely exercised.
         List<UUID> stuck = List.of(
-                saveLegacy(deviceId, "DELIVERED", false, past, null),
-                saveLegacy(deviceId, "DELIVERED", false, past, null),
-                saveLegacy(deviceId, "DELIVERED", false, past, null),
-                saveLegacy(deviceId, "DELIVERED", false, past, null),
-                saveLegacy(deviceId, "SENT", true, past, null));
+                saveRpc(deviceId, UUID.fromString("9244c6c6-d932-43ca-91bb-b24482b08905"), "DELIVERED", false, past, null),
+                saveRpc(deviceId, UUID.fromString("c67c7357-1198-40f5-9d07-1a4a9f862720"), "DELIVERED", false, past, null),
+                saveRpc(deviceId, UUID.fromString("bde89223-7fe0-47e3-b190-88925ac7d070"), "DELIVERED", false, past, null),
+                saveRpc(deviceId, UUID.fromString("564b8b9d-5e06-4a71-b9d9-81b5b736595c"), "DELIVERED", false, past, null),
+                saveRpc(deviceId, UUID.fromString("31587a70-50c3-4f20-872c-70d4d3406a2d"), "SENT", true, past, null));
 
         // Rows the backfill MUST leave untouched.
-        UUID oneWayDeliveredPastExpiry = saveLegacy(deviceId, "DELIVERED", true, past, null); // terminal success
-        UUID twoWayDeliveredFutureExpiry = saveLegacy(deviceId, "DELIVERED", false, future, null); // not expired yet
-        UUID twoWayDeliveredWithRequestId = saveLegacy(deviceId, "DELIVERED", false, past, 7); // tracked, not legacy
-        UUID queuedPastExpiry = saveLegacy(deviceId, "QUEUED", false, past, null); // never sent
+        UUID oneWayDeliveredPastExpiry = saveRpc(deviceId, UUID.fromString("a553c35b-47a4-4906-825a-1be743e96d5d"), "DELIVERED", true, past, null); // terminal success
+        UUID twoWayDeliveredFutureExpiry = saveRpc(deviceId, UUID.fromString("acfd787f-86f3-4121-becb-e88eaa288934"), "DELIVERED", false, future, null); // not expired yet
+        UUID twoWayDeliveredWithRequestId = saveRpc(deviceId, UUID.fromString("ae7af8fc-7e58-492a-8c56-7453a48b3263"), "DELIVERED", false, past, 7); // tracked, not legacy
+        UUID queuedPastExpiry = saveRpc(deviceId, UUID.fromString("06129c0a-6654-49b0-938a-b87b79a8b7b7"), "QUEUED", false, past, null); // never sent
 
         migration.applyAfterCommit();
 
@@ -104,11 +103,10 @@ public class V4_3_1_4MigrationIntegrationTest extends AbstractControllerTest {
         return jdbcTemplate.queryForObject("SELECT response FROM rpc WHERE id = ?", String.class, id);
     }
 
-    // Seeds a legacy row (bypassing the entity/JPA layer to write raw request JSON) exactly as a pre-request_id
+    // Seeds an rpc row (bypassing the entity/JPA layer to write raw request JSON) exactly as a pre-request_id
     // server version would have left it: request_id NULL, request JSON carrying the oneway flag the migration's
     // CLEANUP_BATCH_SQL extracts via request::jsonb ->> 'oneway'.
-    private UUID saveLegacy(DeviceId deviceId, String status, boolean oneway, long expirationTime, Integer requestId) {
-        UUID id = UUID.randomUUID();
+    private UUID saveRpc(DeviceId deviceId, UUID id, String status, boolean oneway, long expirationTime, Integer requestId) {
         seededIds.add(id);
         String request = "{\"oneway\":" + oneway + ",\"method\":\"x\"}";
         jdbcTemplate.update("INSERT INTO rpc (id, created_time, tenant_id, device_id, expiration_time, request, " +
