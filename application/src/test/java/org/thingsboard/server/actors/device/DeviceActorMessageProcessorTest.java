@@ -45,16 +45,13 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.willReturn;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 public class DeviceActorMessageProcessorTest {
@@ -73,18 +70,18 @@ public class DeviceActorMessageProcessorTest {
     public void setUp() {
         systemContext = mock(ActorSystemContext.class);
         deviceService = mock(DeviceService.class);
-        willReturn(MAX_CONCURRENT_SESSIONS_PER_DEVICE).given(systemContext).getMaxConcurrentSessionsPerDevice();
-        willReturn(deviceService).given(systemContext).getDeviceService();
-        willReturn("BURST").given(systemContext).getRpcSubmitStrategy();
+        given(systemContext.getMaxConcurrentSessionsPerDevice()).willReturn(MAX_CONCURRENT_SESSIONS_PER_DEVICE);
+        given(systemContext.getDeviceService()).willReturn(deviceService);
+        given(systemContext.getRpcSubmitStrategy()).willReturn("BURST");
         processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
-        willReturn(mock(TbCoreToTransportService.class)).given(systemContext).getTbCoreToTransportService();
+        given(systemContext.getTbCoreToTransportService()).willReturn(mock(TbCoreToTransportService.class));
     }
 
     @Test
     public void givenSystemContext_whenNewInstance_thenVerifySessionMapMaxSize() {
-        assertThat(processor.sessions, instanceOf(LinkedHashMapRemoveEldest.class));
-        assertThat(processor.sessions.getMaxEntries(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE));
-        assertThat(processor.sessions.getRemovalConsumer(), notNullValue());
+        assertThat(processor.sessions).isInstanceOf(LinkedHashMapRemoveEldest.class);
+        assertThat(processor.sessions.getMaxEntries()).isEqualTo(MAX_CONCURRENT_SESSIONS_PER_DEVICE);
+        assertThat(processor.sessions.getRemovalConsumer()).isNotNull();
     }
 
     @Test
@@ -96,16 +93,16 @@ public class DeviceActorMessageProcessorTest {
             processor.attributeSubscriptions.put(sessionID, Mockito.mock(SessionInfo.class));
             processor.rpcSubscriptions.put(sessionID, Mockito.mock(SessionInfo.class));
         }
-        assertThat(processor.sessions.size(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE));
-        assertThat(processor.attributeSubscriptions.size(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE));
-        assertThat(processor.rpcSubscriptions.size(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE));
+        assertThat(processor.sessions.size()).isEqualTo(MAX_CONCURRENT_SESSIONS_PER_DEVICE);
+        assertThat(processor.attributeSubscriptions.size()).isEqualTo(MAX_CONCURRENT_SESSIONS_PER_DEVICE);
+        assertThat(processor.rpcSubscriptions.size()).isEqualTo(MAX_CONCURRENT_SESSIONS_PER_DEVICE);
 
         //add one more
         processor.sessions.put(UUID.randomUUID(), Mockito.mock(SessionInfoMetaData.class));
 
-        assertThat(processor.sessions.size(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE));
-        assertThat(processor.attributeSubscriptions.size(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE-1));
-        assertThat(processor.rpcSubscriptions.size(), is(MAX_CONCURRENT_SESSIONS_PER_DEVICE-1));
+        assertThat(processor.sessions.size()).isEqualTo(MAX_CONCURRENT_SESSIONS_PER_DEVICE);
+        assertThat(processor.attributeSubscriptions.size()).isEqualTo(MAX_CONCURRENT_SESSIONS_PER_DEVICE - 1);
+        assertThat(processor.rpcSubscriptions.size()).isEqualTo(MAX_CONCURRENT_SESSIONS_PER_DEVICE - 1);
 
     }
 
@@ -152,7 +149,7 @@ public class DeviceActorMessageProcessorTest {
         processor.init(mock(TbActorCtx.class));
 
         // terminal one-way DELIVERED row, past expiry: must be left untouched, no EXPIRED overwrite
-        Mockito.verify(rpcService, Mockito.never()).update(any(), any());
+        verify(rpcService, never()).update(any(), any());
     }
 
     @Test
@@ -274,24 +271,24 @@ public class DeviceActorMessageProcessorTest {
         verify(rpcService).update(eq(tenantId), captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(RpcStatus.FAILED);
         assertThat(captor.getValue().getResponse()).isNotNull();
-        Mockito.verify(toTransport, Mockito.never()).process(any(), any());
+        verify(toTransport, never()).process(any(), any());
     }
 
     private void mockRpcInfra() {
         rpcService = mock(TbRpcService.class);
-        willReturn(rpcService).given(systemContext).getTbRpcService();
-        willReturn(mock(TbCoreDeviceRpcService.class)).given(systemContext).getTbCoreDeviceRpcService();
-        willReturn("svc").given(systemContext).getServiceId();
+        given(systemContext.getTbRpcService()).willReturn(rpcService);
+        given(systemContext.getTbCoreDeviceRpcService()).willReturn(mock(TbCoreDeviceRpcService.class));
+        given(systemContext.getServiceId()).willReturn("svc");
         toTransport = mock(TbCoreToTransportService.class);
-        willReturn(toTransport).given(systemContext).getTbCoreToTransportService();
+        given(systemContext.getTbCoreToTransportService()).willReturn(toTransport);
     }
 
     // The reload issues a single findInFlightForReload query (DB-side filters out one-way DELIVERED and
     // terminal statuses - see JpaRpcDaoTest); the actor sorts the rows itself, so the stub just returns
     // them all in one page regardless of order.
     private void stubInFlight(Rpc... rows) {
-        willReturn(new PageData<>(List.of(rows), 1, 0, false)).given(rpcService)
-                .findInFlightForReload(eq(tenantId), eq(deviceId), any());
+        given(rpcService.findInFlightForReload(eq(tenantId), eq(deviceId), any()))
+                .willReturn(new PageData<>(List.of(rows), 1, 0, false));
     }
 
     private void pushViaAsyncSession() {
