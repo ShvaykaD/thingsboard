@@ -115,8 +115,6 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
 
-    // Shared with V4_3_1_4Migration.LEGACY_CLOSE_RESPONSE so a row closed by the one-time backfill reads
-    // identically to one closed live by this actor on reload.
     public static final String LEGACY_UNTRACKED_MESSAGE =
             "This RPC was no longer tracked by the platform after a restart and could not reach a terminal state " +
                     "on its own. It was left stuck in a non-terminal state (SENT or DELIVERED) and has now been " +
@@ -315,9 +313,6 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         new PageDataIterable<>(link -> systemContext.getTbRpcService()
                 .findInFlightForReload(tenantId, deviceId, link), 1024)
                 .forEach(inFlight::add);
-        // createdTime == submission order; requestId (rpcSeq at creation) breaks same-millisecond ties
-        // so the reload (and thus the sequential re-publish) order is deterministic. Legacy rows have a
-        // null requestId and sort last on a tie — they predate the id scheme, so their order is best-effort.
         inFlight.sort(Comparator.comparingLong(Rpc::getCreatedTime)
                 .thenComparing(Rpc::getRequestId, Comparator.nullsLast(Comparator.naturalOrder())));
         return inFlight;
@@ -331,9 +326,7 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         }
         RpcStatus status = rpc.getStatus();
         if (msg.isOneway() && status == RpcStatus.DELIVERED) {
-            return; // one-way DELIVERED is the terminal success state — leave untouched, never re-publish.
-            // One-way SENT falls through to reload/re-arm/re-publish. SENT only exists for QoS 1
-            // (QoS 0 goes QUEUED->DELIVERED on write), so this re-publish auto-scopes to QoS 1.
+            return;
         }
         // TODO(cleanup, post-4.3.1.4): transitional back-compat for rows created before request_id existed.
         // This SENT/DELIVERED close-guard and the QUEUED fresh-id fallback below go dead once no rpc row has
@@ -341,9 +334,6 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         // this guard / the 4.3.1.4 migration drain them). Safe to delete in a later release; consider making
         // rpc.request_id NOT NULL then. (The msg == null guard above is permanent.)
         if (rpc.getRequestId() == null && (status == RpcStatus.SENT || status == RpcStatus.DELIVERED)) {
-            // Untrackable legacy row (one-way DELIVERED already returned above; the reload query now also excludes
-            // null-oneway DELIVERED, so this is reached mainly by legacy SENT stragglers). Close it — re-publishing
-            // would push a stale command to the device. Past expiry -> EXPIRED, otherwise -> FAILED.
             rpc.setStatus(rpc.getExpirationTime() < System.currentTimeMillis() ? RpcStatus.EXPIRED : RpcStatus.FAILED);
             rpc.setResponse(LEGACY_UNTRACKED_RESPONSE);
             systemContext.getTbRpcService().update(tenantId, rpc);
@@ -356,8 +346,6 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
             return;
         }
         Integer persistedId = rpc.getRequestId();
-        // rpcSeq was already advanced past every persisted id in init(), so a legacy row (null id) draws a
-        // fresh id that cannot collide with a persisted id reloaded in the same batch.
         int requestId = persistedId != null ? persistedId : rpcSeq++;
         boolean sent = status != RpcStatus.QUEUED;
         boolean delivered = status == RpcStatus.DELIVERED;
@@ -1112,8 +1100,6 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
 
     void init(TbActorCtx ctx) {
         List<Rpc> inFlight = loadInFlightRpcs();
-        // Advance the counter past every persisted id BEFORE restoring, so a legacy row (null id) that draws
-        // rpcSeq++ during restore cannot collide with a persisted id reloaded in the same batch.
         int maxPersistedId = inFlight.stream().map(Rpc::getRequestId).filter(Objects::nonNull)
                 .mapToInt(Integer::intValue).max().orElse(-1);
         rpcSeq = Math.max(rpcSeq, maxPersistedId + 1);

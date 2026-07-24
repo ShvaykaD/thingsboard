@@ -73,7 +73,6 @@ CREATE INDEX IF NOT EXISTS idx_edge_event_id ON edge_event(id);
 
 CREATE INDEX IF NOT EXISTS idx_rpc_tenant_id_device_id ON rpc(tenant_id, device_id);
 
--- keep in sync with application/src/main/data/upgrade/lts/4.3.1.4/schema_update.sql (idx_rpc_in_flight)
 CREATE INDEX IF NOT EXISTS idx_rpc_in_flight ON rpc (tenant_id, device_id)
     WHERE status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false);
 

@@ -51,14 +51,17 @@ import java.util.UUID;
 @TbCoreComponent
 public class V4_3_1_4Migration implements LtsMigration {
 
-    // Same wording as the device actor's LEGACY_UNTRACKED_RESPONSE (DeviceActorMessageProcessor), so a row closed
-    // by this one-time backfill reads identically to one closed live by the actor on reload.
+    // Same wording as DeviceActorMessageProcessor.LEGACY_UNTRACKED_MESSAGE, so a row closed by this one-time
+    // backfill reads identically to one closed live by the actor on reload.
     static final String LEGACY_CLOSE_RESPONSE = JacksonUtil.newObjectNode()
             .put("error", DeviceActorMessageProcessor.LEGACY_UNTRACKED_MESSAGE).toString();
 
     // Keyset-paginated batch: window of ids > cursor, close the matching legacy rows in that window, report how
     // many closed and the window's max id (the next cursor). Self-contained CTE so a single round trip both
     // selects the window and performs the conditional update.
+    // The window scan (`id > ?`) walks the table in id order regardless of how many rows match — that's fine
+    // here: during this one-time upgrade every legacy row has request_id IS NULL, so an index on that predicate
+    // would not be selective and wouldn't speed anything up.
     static final String CLEANUP_BATCH_SQL = """
             WITH w AS (
               SELECT id FROM rpc WHERE id > ? ORDER BY id LIMIT ?

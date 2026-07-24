@@ -29,8 +29,6 @@ import java.util.UUID;
 
 public interface RpcRepository extends JpaRepository<RpcEntity, UUID> {
 
-    // Must stay identical to the idx_rpc_in_flight predicate (schema-entities-idx.sql / 4.3.1.4/schema_update.sql)
-    // so the planner can use that index.
     String IN_FLIGHT_RELOAD_PREDICATE = "status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false)";
 
     Page<RpcEntity> findAllByTenantIdAndDeviceId(UUID tenantId, UUID deviceId, Pageable pageable);

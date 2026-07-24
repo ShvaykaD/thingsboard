@@ -45,9 +45,9 @@ public class Rpc extends BaseData<RpcId> implements HasTenantId {
     private RpcStatus status;
     @Schema(description = "Additional info used in the rule engine to process the updates to the RPC state.", accessMode = Schema.AccessMode.READ_ONLY)
     private JsonNode additionalInfo;
-    @JsonIgnore // internal transport correlation id used only for actor-side recovery; kept out of the public API and rule-engine payload
+    @JsonIgnore
     private Integer requestId;
-    @JsonIgnore // internal flag mirrored from the request JSON; used only to let actor-side reload filter out terminal one-way DELIVERED rows
+    @JsonIgnore
     private Boolean oneway;
 
     public Rpc() {
