@@ -17,6 +17,9 @@ package org.thingsboard.server.common.data.rpc;
 
 import lombok.Getter;
 
+import java.util.EnumSet;
+import java.util.Set;
+
 public enum RpcStatus {
 
     QUEUED(true),
@@ -33,6 +36,21 @@ public enum RpcStatus {
 
     RpcStatus(boolean pushDeleteNotificationToCore) {
         this.pushDeleteNotificationToCore = pushDeleteNotificationToCore;
+    }
+
+    /**
+     * The set of CURRENT (persisted) statuses that a guarded status UPDATE to THIS (target) status is allowed to
+     * overwrite. No terminal status appears in any set, so terminals are immutable. The one-way vs two-way
+     * DELIVERED distinction is enforced separately in SQL, so it is intentionally absent here.
+     */
+    public Set<RpcStatus> getAllowedFromStatuses() {
+        return switch (this) {
+            case SENT -> EnumSet.of(QUEUED);
+            case DELIVERED -> EnumSet.of(QUEUED, SENT);
+            case QUEUED -> EnumSet.of(SENT);                                     // retry re-queue
+            case SUCCESSFUL, FAILED, EXPIRED -> EnumSet.of(QUEUED, SENT, DELIVERED); // in-flight only
+            default -> EnumSet.noneOf(RpcStatus.class);                          // TIMEOUT, DELETED: not via this path
+        };
     }
 
 }

@@ -18,11 +18,17 @@ package org.thingsboard.server.common.data.rpc;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.thingsboard.server.common.data.rpc.RpcStatus.DELIVERED;
 import static org.thingsboard.server.common.data.rpc.RpcStatus.QUEUED;
 import static org.thingsboard.server.common.data.rpc.RpcStatus.SENT;
+import static org.thingsboard.server.common.data.rpc.RpcStatus.EXPIRED;
+import static org.thingsboard.server.common.data.rpc.RpcStatus.FAILED;
+import static org.thingsboard.server.common.data.rpc.RpcStatus.SUCCESSFUL;
+import static org.thingsboard.server.common.data.rpc.RpcStatus.DELETED;
+import static org.thingsboard.server.common.data.rpc.RpcStatus.TIMEOUT;
 
 class RpcStatusTest {
 
@@ -41,6 +47,29 @@ class RpcStatusTest {
             } else {
                 assertThat(status.isPushDeleteNotificationToCore()).isFalse();
             }
+        }
+    }
+
+    @Test
+    void allowedFromStatuses_matchesStateMachine() {
+        assertThat(SENT.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED);
+        assertThat(DELIVERED.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED, SENT);
+        assertThat(QUEUED.getAllowedFromStatuses()).containsExactlyInAnyOrder(SENT);
+        assertThat(SUCCESSFUL.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED);
+        assertThat(FAILED.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED);
+        assertThat(EXPIRED.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED);
+        assertThat(TIMEOUT.getAllowedFromStatuses()).isEmpty();
+        assertThat(DELETED.getAllowedFromStatuses()).isEmpty();
+    }
+
+    @Test
+    void terminalStatusesNeverAppearAsAllowedFromSource() {
+        // A terminal status must never be overwritable by any transition -> it appears in no allowed-from set.
+        Set<RpcStatus> terminals = Set.of(SUCCESSFUL, FAILED, EXPIRED, DELETED);
+        for (RpcStatus target : RpcStatus.values()) {
+            assertThat(target.getAllowedFromStatuses())
+                    .as("target %s must not allow overwriting a terminal status", target)
+                    .doesNotContainAnyElementsOf(terminals);
         }
     }
 
