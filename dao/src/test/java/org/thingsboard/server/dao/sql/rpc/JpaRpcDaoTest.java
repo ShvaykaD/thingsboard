@@ -16,8 +16,10 @@
 package org.thingsboard.server.dao.sql.rpc;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.junit.After;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.RpcId;
@@ -41,6 +43,19 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
 
     @Autowired
     RpcUpdateRepository rpcUpdateRepository;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
+    private UUID rawSeededId;
+
+    @After
+    public void cleanupRawSeededRow() {
+        if (rawSeededId != null) {
+            jdbcTemplate.update("DELETE FROM rpc WHERE id = ?", rawSeededId);
+            rawSeededId = null;
+        }
+    }
 
     @Test
     public void deleteOutdated() {
@@ -268,6 +283,25 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
                 .getData().stream().map(Rpc::getUuidId).toList();
 
         assertThat(got).containsExactlyInAnyOrder(q, s, twoWayDel);
+    }
+
+    @Test
+    public void guardAllowsSuccessfulOnDeliveredRowWithNullOneway() throws Exception {
+        UUID id = UUID.randomUUID();
+        rawSeededId = id;
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        // Legacy row: oneway column NULL (pre-4.3.1.4). Raw insert because the entity writes a primitive boolean.
+        jdbcTemplate.update("INSERT INTO rpc (id, created_time, tenant_id, device_id, expiration_time, request, " +
+                        "response, status, request_id, oneway) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL)",
+                id, System.currentTimeMillis(), TenantId.SYS_TENANT_ID.getId(), deviceId.getId(),
+                System.currentTimeMillis() + 60_000, "{\"method\":\"x\"}", "DELIVERED", 1);
+
+        // NULL oneway must be treated as two-way (not terminal): a real response may complete it.
+        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}")))
+                .get(5, TimeUnit.SECONDS)).isTrue();
+        Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
+        assertThat(stored.getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
+        assertThat(stored.getResponse()).isEqualTo(JacksonUtil.toJsonNode("{\"ok\":true}"));
     }
 
     private UUID saveRpc(DeviceId deviceId, RpcStatus status, boolean oneway) {

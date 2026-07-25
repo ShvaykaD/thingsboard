@@ -49,7 +49,7 @@ public enum RpcStatus {
             case DELIVERED -> EnumSet.of(QUEUED, SENT);
             case QUEUED -> EnumSet.of(SENT);                                     // retry re-queue
             case SUCCESSFUL, FAILED, EXPIRED -> EnumSet.of(QUEUED, SENT, DELIVERED); // in-flight only
-            default -> EnumSet.noneOf(RpcStatus.class);                          // TIMEOUT, DELETED: not via this path
+            case TIMEOUT, DELETED -> EnumSet.noneOf(RpcStatus.class);            // not written via the guarded UPDATE
         };
     }
 

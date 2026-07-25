@@ -32,7 +32,7 @@ public class RpcUpdateRepository extends AbstractInsertRepository {
 
     private static final String UPDATE =
             "UPDATE rpc SET status = ?, response = COALESCE(?, response) " +
-            "WHERE id = ? AND status = ANY(?) AND NOT (status = 'DELIVERED' AND oneway = TRUE);";
+            "WHERE id = ? AND status = ANY(?) AND NOT (status = 'DELIVERED' AND COALESCE(oneway, FALSE) = TRUE);";
 
     List<Boolean> update(List<RpcEntity> updates) {
         return transactionTemplate.execute(status -> {
