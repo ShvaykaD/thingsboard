@@ -31,7 +31,8 @@ import java.util.List;
 public class RpcUpdateRepository extends AbstractInsertRepository {
 
     private static final String UPDATE =
-            "UPDATE rpc SET status = ?, response = COALESCE(?, response) WHERE id = ?;";
+            "UPDATE rpc SET status = ?, response = COALESCE(?, response) " +
+            "WHERE id = ? AND status = ANY(?) AND NOT (status = 'DELIVERED' AND oneway = TRUE);";
 
     List<Boolean> update(List<RpcEntity> updates) {
         return transactionTemplate.execute(status -> {
@@ -42,6 +43,9 @@ public class RpcUpdateRepository extends AbstractInsertRepository {
                     ps.setString(1, rpc.getStatus().name());
                     ps.setString(2, toJsonStr(rpc.getResponse()));
                     ps.setObject(3, rpc.getUuid());
+                    String[] allowedFrom = rpc.getStatus().getAllowedFromStatuses().stream()
+                            .map(Enum::name).toArray(String[]::new);
+                    ps.setArray(4, ps.getConnection().createArrayOf("varchar", allowedFrom));
                 }
 
                 @Override

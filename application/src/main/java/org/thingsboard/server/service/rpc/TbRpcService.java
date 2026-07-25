@@ -86,7 +86,7 @@ public class TbRpcService {
                     if (Boolean.TRUE.equals(persisted)) {
                         notifyRuleEngine(tenantId, rpc);
                     } else {
-                        log.debug("[{}][{}][{}] Skipping rule engine notification for status [{}] - RPC row no longer exists",
+                        log.debug("[{}][{}][{}] Skipping rule engine notification for status [{}] - RPC row is not updatable (already terminal or removed)",
                                 tenantId, rpc.getDeviceId(), rpc.getId(), rpc.getStatus());
                     }
                 },

@@ -102,7 +102,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         // same partition in submission order. No queue timing involved.
         //   index 0: update A (SUCCESSFUL, {ok:true}) -> UPDATE hits the existing row  -> true
         //   index 1: update B (SUCCESSFUL, {x:1})     -> UPDATE for a missing row      -> false
-        //   index 2: update A (EXPIRED, null response) -> UPDATE hits A, keeps response -> true
+        //   index 2: update A (EXPIRED) -> guard blocks overwrite of terminal SUCCESSFUL -> false
         List<RpcEntity> batch = List.of(
                 new RpcEntity(rpc(idA, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}"))),
                 new RpcEntity(rpc(idB, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"x\":1}"))),
@@ -110,13 +110,16 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
 
         List<Boolean> persisted = rpcUpdateRepository.update(batch);
 
-        // Booleans are aligned positionally to submission order.
-        assertThat(persisted).containsExactly(true, false, true);
+        // Booleans align positionally to submission order:
+        //   index 0: A QUEUED -> SUCCESSFUL      -> allowed          -> true
+        //   index 1: B (missing row)             -> no match         -> false
+        //   index 2: A SUCCESSFUL -> EXPIRED     -> guard blocks it  -> false  (terminal is immutable)
+        assertThat(persisted).containsExactly(true, false, false);
 
-        // Updates apply in order, so A ends EXPIRED, and the null-response update kept the stored response.
+        // A stays SUCCESSFUL with its response: the in-batch EXPIRED was rejected by the guard.
         Rpc storedA = rpcDao.findById(TenantId.SYS_TENANT_ID, idA);
         assertThat(storedA).isNotNull();
-        assertThat(storedA.getStatus()).isEqualTo(RpcStatus.EXPIRED);
+        assertThat(storedA.getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
         assertThat(storedA.getResponse()).isEqualTo(JacksonUtil.toJsonNode("{\"ok\":true}"));
         // ...and the update for a never-created row neither persisted nor resurrected it.
         assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, idB)).isNull();
@@ -141,22 +144,75 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
-    public void saveAsyncNullResponseUpdateKeepsStoredResponse() throws Exception {
+    public void guardBlocksExpiredOverwritingSuccessful() throws Exception {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
 
         rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(id, deviceId, RpcStatus.QUEUED, null));
 
-        // A successful response is stored.
-        rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}")))
-                .get(5, TimeUnit.SECONDS);
+        // A real device response reaches SUCCESSFUL with a response body.
+        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}")))
+                .get(5, TimeUnit.SECONDS)).isTrue();
 
-        // A later status update carries no response - it must NOT clobber the stored one.
-        rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.EXPIRED, null)).get(5, TimeUnit.SECONDS);
+        // A stale EXPIRED (e.g. from a migrated actor's timeout) must NOT overwrite it: future resolves false.
+        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.EXPIRED, null)).get(5, TimeUnit.SECONDS)).isFalse();
 
         Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
-        assertThat(stored.getStatus()).isEqualTo(RpcStatus.EXPIRED);
+        assertThat(stored.getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
         assertThat(stored.getResponse()).isEqualTo(JacksonUtil.toJsonNode("{\"ok\":true}"));
+    }
+
+    @Test
+    public void guardBlocksExpiredOverwritingOneWayDelivered() throws Exception {
+        UUID id = UUID.randomUUID();
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        Rpc created = rpc(id, deviceId, RpcStatus.DELIVERED, null);
+        created.setOneway(true);
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, created);
+
+        // The one-way DELIVERED clause protects it (guard reads oneway from the existing row).
+        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.EXPIRED, null)).get(5, TimeUnit.SECONDS)).isFalse();
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id).getStatus()).isEqualTo(RpcStatus.DELIVERED);
+    }
+
+    @Test
+    public void guardAllowsExpiredOverwritingTwoWayDelivered() throws Exception {
+        UUID id = UUID.randomUUID();
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        Rpc created = rpc(id, deviceId, RpcStatus.DELIVERED, null);
+        created.setOneway(false);
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, created);
+
+        // Two-way DELIVERED is in-flight (awaiting response), so a genuine timeout may expire it.
+        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.EXPIRED, null)).get(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id).getStatus()).isEqualTo(RpcStatus.EXPIRED);
+    }
+
+    @Test
+    public void guardAllowsSuccessfulFromSent() throws Exception {
+        UUID id = UUID.randomUUID();
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, rpc(id, deviceId, RpcStatus.SENT, null));
+
+        // Response for an as-yet-undelivered RPC (no PUBACK) lands while status is still SENT.
+        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"v\":1}")))
+                .get(5, TimeUnit.SECONDS)).isTrue();
+        Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
+        assertThat(stored.getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
+        assertThat(stored.getResponse()).isEqualTo(JacksonUtil.toJsonNode("{\"v\":1}"));
+    }
+
+    @Test
+    public void guardBlocksSentDowngradingDelivered() throws Exception {
+        UUID id = UUID.randomUUID();
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        Rpc created = rpc(id, deviceId, RpcStatus.DELIVERED, null);
+        created.setOneway(false);
+        rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, created);
+
+        // A stale/duplicate SENT must not roll DELIVERED backwards.
+        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SENT, null)).get(5, TimeUnit.SECONDS)).isFalse();
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id).getStatus()).isEqualTo(RpcStatus.DELIVERED);
     }
 
     @Test
