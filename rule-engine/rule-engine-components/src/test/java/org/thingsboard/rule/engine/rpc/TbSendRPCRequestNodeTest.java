@@ -62,6 +62,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 public class TbSendRPCRequestNodeTest {
@@ -450,6 +451,19 @@ public class TbSendRPCRequestNodeTest {
         return requestCaptor;
     }
 
+    private void stubRpcResponse(RpcError error, String response) {
+        willAnswer(invocation -> {
+            Consumer<RuleEngineDeviceRpcResponse> consumer = invocation.getArgument(1);
+            RuleEngineDeviceRpcResponse rpcResponse = mock(RuleEngineDeviceRpcResponse.class);
+            given(rpcResponse.getError()).willReturn(Optional.ofNullable(error));
+            if (error == null) {
+                given(rpcResponse.getResponse()).willReturn(Optional.ofNullable(response));
+            }
+            consumer.accept(rpcResponse);
+            return null;
+        }).given(rpcServiceMock).sendRpcRequestToDevice(any(RuleEngineDeviceRpcRequest.class), any(Consumer.class));
+    }
+
     @Test
     public void givenRpcResponseWithoutError_whenOnMsg_thenSendsRpcRequest() {
         TbMsg outMsg = TbMsg.newMsg()
@@ -515,6 +529,93 @@ public class TbSendRPCRequestNodeTest {
 
         then(ctxMock).should().enqueueForTellFailure(outMsg, RpcError.NO_ACTIVE_CONNECTION.name());
         then(ctxMock).should().ack(msg);
+    }
+
+    @Test
+    public void givenForceAckDisabledAndSuccessfulResponse_whenOnMsg_thenTellSuccessOnIncomingMsg() throws TbNodeException {
+        // GIVEN
+        config.setForceAck(false);
+        node.init(ctxMock, new TbNodeConfiguration(JacksonUtil.valueToTree(config)));
+        given(ctxMock.getRpcService()).willReturn(rpcServiceMock);
+        given(ctxMock.getTenantId()).willReturn(TENANT_ID);
+        stubRpcResponse(null, "{\"rpcId\":\"6b04b5b2-1d94-4a4e-9b47-4f1e0e40e4a1\"}");
+
+        TbMsgMetaData metadata = new TbMsgMetaData();
+        metadata.putValue(DataConstants.PERSISTENT, "true");
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.RPC_CALL_FROM_SERVER_TO_DEVICE)
+                .originator(DEVICE_ID)
+                .copyMetaData(metadata)
+                .data(MSG_DATA)
+                .build();
+
+        // WHEN
+        node.onMsg(ctxMock, msg);
+
+        // THEN
+        then(ctxMock).should(never()).ack(any());
+        then(ctxMock).should(never()).enqueueForTellNext(any(), any(String.class));
+        ArgumentCaptor<TbMsg> outMsgCaptor = ArgumentCaptor.forClass(TbMsg.class);
+        then(ctxMock).should().tellSuccess(outMsgCaptor.capture());
+        TbMsg outMsg = outMsgCaptor.getValue();
+        assertThat(outMsg.getId()).isEqualTo(msg.getId());
+        assertThat(outMsg.getMetaData()).isEqualTo(msg.getMetaData());
+        assertThat(outMsg.getData()).isEqualTo("{\"rpcId\":\"6b04b5b2-1d94-4a4e-9b47-4f1e0e40e4a1\"}");
+    }
+
+    @Test
+    public void givenForceAckDisabledAndEmptyResponse_whenOnMsg_thenTellSuccessWithEmptyJson() throws TbNodeException {
+        // GIVEN
+        config.setForceAck(false);
+        node.init(ctxMock, new TbNodeConfiguration(JacksonUtil.valueToTree(config)));
+        given(ctxMock.getRpcService()).willReturn(rpcServiceMock);
+        given(ctxMock.getTenantId()).willReturn(TENANT_ID);
+        stubRpcResponse(null, null);
+
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.RPC_CALL_FROM_SERVER_TO_DEVICE)
+                .originator(DEVICE_ID)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(MSG_DATA)
+                .build();
+
+        // WHEN
+        node.onMsg(ctxMock, msg);
+
+        // THEN
+        ArgumentCaptor<TbMsg> outMsgCaptor = ArgumentCaptor.forClass(TbMsg.class);
+        then(ctxMock).should().tellSuccess(outMsgCaptor.capture());
+        assertThat(outMsgCaptor.getValue().getData()).isEqualTo(TbMsg.EMPTY_JSON_OBJECT);
+    }
+
+    @Test
+    public void givenForceAckDisabledAndErrorResponse_whenOnMsg_thenTellFailureOnIncomingMsg() throws TbNodeException {
+        // GIVEN
+        config.setForceAck(false);
+        node.init(ctxMock, new TbNodeConfiguration(JacksonUtil.valueToTree(config)));
+        given(ctxMock.getRpcService()).willReturn(rpcServiceMock);
+        given(ctxMock.getTenantId()).willReturn(TENANT_ID);
+        stubRpcResponse(RpcError.TIMEOUT, null);
+
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.RPC_CALL_FROM_SERVER_TO_DEVICE)
+                .originator(DEVICE_ID)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(MSG_DATA)
+                .build();
+
+        // WHEN
+        node.onMsg(ctxMock, msg);
+
+        // THEN
+        then(ctxMock).should(never()).ack(any());
+        then(ctxMock).should(never()).enqueueForTellFailure(any(), any(String.class));
+        ArgumentCaptor<TbMsg> outMsgCaptor = ArgumentCaptor.forClass(TbMsg.class);
+        ArgumentCaptor<Throwable> errorCaptor = ArgumentCaptor.forClass(Throwable.class);
+        then(ctxMock).should().tellFailure(outMsgCaptor.capture(), errorCaptor.capture());
+        assertThat(outMsgCaptor.getValue().getId()).isEqualTo(msg.getId());
+        assertThat(outMsgCaptor.getValue().getData()).isEqualTo("{\"error\":\"TIMEOUT\"}");
+        assertThat(errorCaptor.getValue()).hasMessage("TIMEOUT");
     }
 
     @ParameterizedTest

@@ -23,6 +23,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.thingsboard.rule.engine.api.RuleEngineDeviceRpcRequest;
+import org.thingsboard.rule.engine.api.RuleEngineDeviceRpcResponse;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.TbContext;
 import org.thingsboard.rule.engine.api.TbNode;
@@ -36,9 +37,11 @@ import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.msg.TbMsgType;
 import org.thingsboard.server.common.data.msg.TbNodeConnectionType;
 import org.thingsboard.server.common.data.plugin.ComponentType;
+import org.thingsboard.server.common.data.rpc.RpcError;
 import org.thingsboard.server.common.data.util.TbPair;
 import org.thingsboard.server.common.msg.TbMsg;
 
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -144,16 +147,32 @@ public class TbSendRPCRequestNode implements TbNode {
                     .responseTimeout(responseTimeout)
                     .build();
 
-            ctx.getRpcService().sendRpcRequestToDevice(request, ruleEngineDeviceRpcResponse -> {
-                if (ruleEngineDeviceRpcResponse.getError().isEmpty()) {
-                    TbMsg next = ctx.newMsg(msg.getQueueName(), msg.getType(), msg.getOriginator(), msg.getCustomerId(), msg.getMetaData(), ruleEngineDeviceRpcResponse.getResponse().orElse(TbMsg.EMPTY_JSON_OBJECT));
-                    ctx.enqueueForTellNext(next, TbNodeConnectionType.SUCCESS);
-                } else {
-                    TbMsg next = ctx.newMsg(msg.getQueueName(), msg.getType(), msg.getOriginator(), msg.getCustomerId(), msg.getMetaData(), wrap("error", ruleEngineDeviceRpcResponse.getError().get().name()));
-                    ctx.enqueueForTellFailure(next, ruleEngineDeviceRpcResponse.getError().get().name());
-                }
-            });
-            ctx.ack(msg);
+            ctx.getRpcService().sendRpcRequestToDevice(request, response -> processRpcResponse(ctx, msg, response));
+            if (config.isForceAck()) {
+                ctx.ack(msg);
+            }
+        }
+    }
+
+    private void processRpcResponse(TbContext ctx, TbMsg msg, RuleEngineDeviceRpcResponse response) {
+        Optional<RpcError> error = response.getError();
+        String data = error.isPresent()
+                ? wrap("error", error.get().name())
+                : response.getResponse().orElse(TbMsg.EMPTY_JSON_OBJECT);
+        if (config.isForceAck()) {
+            TbMsg next = ctx.newMsg(msg.getQueueName(), msg.getType(), msg.getOriginator(), msg.getCustomerId(), msg.getMetaData(), data);
+            if (error.isEmpty()) {
+                ctx.enqueueForTellNext(next, TbNodeConnectionType.SUCCESS);
+            } else {
+                ctx.enqueueForTellFailure(next, error.get().name());
+            }
+        } else {
+            TbMsg next = msg.transform().data(data).build();
+            if (error.isEmpty()) {
+                ctx.tellSuccess(next);
+            } else {
+                ctx.tellFailure(next, new RuntimeException(error.get().name()));
+            }
         }
     }
 
