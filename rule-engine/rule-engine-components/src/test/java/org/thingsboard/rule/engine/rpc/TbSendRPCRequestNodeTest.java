@@ -15,6 +15,7 @@
  */
 package org.thingsboard.rule.engine.rpc;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +45,7 @@ import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.msg.TbMsgType;
 import org.thingsboard.server.common.data.msg.TbNodeConnectionType;
 import org.thingsboard.server.common.data.rpc.RpcError;
+import org.thingsboard.server.common.data.util.TbPair;
 import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.msg.TbMsgMetaData;
 
@@ -97,6 +99,40 @@ public class TbSendRPCRequestNodeTest {
     @Test
     public void verifyDefaultConfig() {
         assertThat(config.getTimeoutInSeconds()).isEqualTo(60);
+        assertThat(config.isForceAck()).isTrue();
+        assertThat(config.isOverrideResponseTimeout()).isFalse();
+    }
+
+    @Test
+    public void givenVersionZeroConfig_whenUpgrade_thenBothFlagsSetToLegacyValues() throws TbNodeException {
+        // GIVEN
+        JsonNode oldConfiguration = JacksonUtil.newObjectNode().put("timeoutInSeconds", 60);
+
+        // WHEN
+        TbPair<Boolean, JsonNode> upgradeResult = node.upgrade(0, oldConfiguration);
+
+        // THEN
+        assertThat(upgradeResult.getFirst()).isTrue();
+        assertThat(upgradeResult.getSecond().get("forceAck").asBoolean()).isTrue();
+        assertThat(upgradeResult.getSecond().get("overrideResponseTimeout").asBoolean()).isFalse();
+        assertThat(upgradeResult.getSecond().get("timeoutInSeconds").asInt()).isEqualTo(60);
+    }
+
+    @Test
+    public void givenAlreadyUpgradedConfig_whenUpgrade_thenNoChanges() throws TbNodeException {
+        // GIVEN
+        JsonNode oldConfiguration = JacksonUtil.newObjectNode()
+                .put("timeoutInSeconds", 60)
+                .put("forceAck", false)
+                .put("overrideResponseTimeout", true);
+
+        // WHEN
+        TbPair<Boolean, JsonNode> upgradeResult = node.upgrade(0, oldConfiguration);
+
+        // THEN
+        assertThat(upgradeResult.getFirst()).isFalse();
+        assertThat(upgradeResult.getSecond().get("forceAck").asBoolean()).isFalse();
+        assertThat(upgradeResult.getSecond().get("overrideResponseTimeout").asBoolean()).isTrue();
     }
 
     @ParameterizedTest

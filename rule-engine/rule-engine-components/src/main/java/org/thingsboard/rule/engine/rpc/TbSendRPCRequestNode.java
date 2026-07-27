@@ -16,6 +16,8 @@
 package org.thingsboard.rule.engine.rpc;
 
 import com.datastax.oss.driver.api.core.uuid.Uuids;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -34,6 +36,7 @@ import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.msg.TbMsgType;
 import org.thingsboard.server.common.data.msg.TbNodeConnectionType;
 import org.thingsboard.server.common.data.plugin.ComponentType;
+import org.thingsboard.server.common.data.util.TbPair;
 import org.thingsboard.server.common.msg.TbMsg;
 
 import java.util.Random;
@@ -49,9 +52,13 @@ import java.util.concurrent.TimeUnit;
                 "If the RPC call request is originated by REST API call from user, will forward the response to user immediately.",
         configDirective = "tbActionNodeRpcRequestConfig",
         icon = "call_made",
-        docUrl = "https://thingsboard.io/docs/user-guide/rule-engine-2-0/nodes/action/rpc-call-request/"
+        docUrl = "https://thingsboard.io/docs/user-guide/rule-engine-2-0/nodes/action/rpc-call-request/",
+        version = 1
 )
 public class TbSendRPCRequestNode implements TbNode {
+
+    private static final String FORCE_ACK_KEY = "forceAck";
+    private static final String OVERRIDE_RESPONSE_TIMEOUT_KEY = "overrideResponseTimeout";
 
     private final Random random = new Random();
     private final Gson gson = new Gson();
@@ -60,6 +67,26 @@ public class TbSendRPCRequestNode implements TbNode {
     @Override
     public void init(TbContext ctx, TbNodeConfiguration configuration) throws TbNodeException {
         config = TbNodeUtils.convert(configuration, TbSendRpcRequestNodeConfiguration.class);
+    }
+
+    @Override
+    public TbPair<Boolean, JsonNode> upgrade(int fromVersion, JsonNode oldConfiguration) throws TbNodeException {
+        boolean hasChanges = false;
+        switch (fromVersion) {
+            case 0:
+                if (!oldConfiguration.has(FORCE_ACK_KEY)) {
+                    hasChanges = true;
+                    ((ObjectNode) oldConfiguration).put(FORCE_ACK_KEY, true);
+                }
+                if (!oldConfiguration.has(OVERRIDE_RESPONSE_TIMEOUT_KEY)) {
+                    hasChanges = true;
+                    ((ObjectNode) oldConfiguration).put(OVERRIDE_RESPONSE_TIMEOUT_KEY, false);
+                }
+                break;
+            default:
+                break;
+        }
+        return new TbPair<>(hasChanges, oldConfiguration);
     }
 
     @Override

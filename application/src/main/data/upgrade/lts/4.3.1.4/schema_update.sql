@@ -24,3 +24,14 @@ CREATE INDEX IF NOT EXISTS idx_rpc_in_flight ON rpc (tenant_id, device_id)
     WHERE status IN ('QUEUED','SENT','TIMEOUT') OR (status = 'DELIVERED' AND oneway = false);
 
 -- RPC REQUEST ID ADDITION END
+
+-- RPC CALL REQUEST NODE FORCE ACK START
+
+UPDATE rule_node SET
+    configuration = (configuration::jsonb || jsonb_build_object(
+        'forceAck', true,
+        'overrideResponseTimeout', false))::varchar,
+    configuration_version = 1
+WHERE type = 'org.thingsboard.rule.engine.rpc.TbSendRPCRequestNode' AND configuration_version = 0;
+
+-- RPC CALL REQUEST NODE FORCE ACK END
