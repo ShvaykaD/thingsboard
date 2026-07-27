@@ -39,17 +39,25 @@ public enum RpcStatus {
     }
 
     /**
-     * The set of CURRENT (persisted) statuses that a guarded status UPDATE to THIS (target) status is allowed to
-     * overwrite. No terminal status appears in any set, so terminals are immutable. The one-way vs two-way
-     * DELIVERED distinction is enforced separately in SQL, so it is intentionally absent here.
+     * The set of CURRENT (persisted) statuses that a guarded status UPDATE to THIS (target) status may overwrite.
+     * No terminal status appears in any set, so terminals are immutable. TIMEOUT is an in-flight peer of SENT
+     * (delivery ack timed out, retrying). The one-way and two-way machines differ in exactly one place: for a
+     * one-way RPC DELIVERED is a terminal success, so it is never an allowed predecessor of a terminal write.
      */
-    public Set<RpcStatus> getAllowedFromStatuses() {
+    public Set<RpcStatus> getAllowedFromStatuses(boolean oneway) {
         return switch (this) {
-            case SENT -> EnumSet.of(QUEUED);
-            case DELIVERED -> EnumSet.of(QUEUED, SENT);
-            case QUEUED -> EnumSet.of(SENT);                                     // retry re-queue
-            case SUCCESSFUL, FAILED, EXPIRED -> EnumSet.of(QUEUED, SENT, DELIVERED); // in-flight only
-            case TIMEOUT, DELETED -> EnumSet.noneOf(RpcStatus.class);            // not written via the guarded UPDATE
+            case SENT -> EnumSet.of(QUEUED, TIMEOUT);
+            case DELIVERED -> EnumSet.of(QUEUED, SENT, TIMEOUT);
+            case QUEUED -> EnumSet.of(SENT, TIMEOUT);                     // retry re-queue
+            case TIMEOUT -> EnumSet.of(SENT);                            // delivery ack timed out while SENT
+            // Terminals may overwrite any in-flight predecessor: async status writes and status-vs-response
+            // message reordering can leave the row at QUEUED when the outcome lands. One-way DELIVERED is a
+            // terminal success, so it is excluded for one-way; SUCCESSFUL is unreachable for one-way (no device
+            // response) but stays consistent with FAILED/EXPIRED.
+            case SUCCESSFUL, FAILED, EXPIRED -> oneway
+                    ? EnumSet.of(QUEUED, SENT, TIMEOUT)
+                    : EnumSet.of(QUEUED, SENT, DELIVERED, TIMEOUT);
+            case DELETED -> EnumSet.noneOf(RpcStatus.class);             // not written via the guarded UPDATE
         };
     }
 

@@ -51,15 +51,25 @@ class RpcStatusTest {
     }
 
     @Test
-    void allowedFromStatuses_matchesStateMachine() {
-        assertThat(SENT.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED);
-        assertThat(DELIVERED.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED, SENT);
-        assertThat(QUEUED.getAllowedFromStatuses()).containsExactlyInAnyOrder(SENT);
-        assertThat(SUCCESSFUL.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED);
-        assertThat(FAILED.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED);
-        assertThat(EXPIRED.getAllowedFromStatuses()).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED);
-        assertThat(TIMEOUT.getAllowedFromStatuses()).isEmpty();
-        assertThat(DELETED.getAllowedFromStatuses()).isEmpty();
+    void allowedFromStatuses_twoWay() {
+        assertThat(SENT.getAllowedFromStatuses(false)).containsExactlyInAnyOrder(QUEUED, TIMEOUT);
+        assertThat(DELIVERED.getAllowedFromStatuses(false)).containsExactlyInAnyOrder(QUEUED, SENT, TIMEOUT);
+        assertThat(QUEUED.getAllowedFromStatuses(false)).containsExactlyInAnyOrder(SENT, TIMEOUT);
+        assertThat(TIMEOUT.getAllowedFromStatuses(false)).containsExactlyInAnyOrder(SENT);
+        assertThat(SUCCESSFUL.getAllowedFromStatuses(false)).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED, TIMEOUT);
+        assertThat(FAILED.getAllowedFromStatuses(false)).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED, TIMEOUT);
+        assertThat(EXPIRED.getAllowedFromStatuses(false)).containsExactlyInAnyOrder(QUEUED, SENT, DELIVERED, TIMEOUT);
+        assertThat(DELETED.getAllowedFromStatuses(false)).isEmpty();
+    }
+
+    @Test
+    void allowedFromStatuses_oneWayExcludesDeliveredForTerminals() {
+        assertThat(SUCCESSFUL.getAllowedFromStatuses(true)).containsExactlyInAnyOrder(QUEUED, SENT, TIMEOUT);
+        assertThat(FAILED.getAllowedFromStatuses(true)).containsExactlyInAnyOrder(QUEUED, SENT, TIMEOUT);
+        assertThat(EXPIRED.getAllowedFromStatuses(true)).containsExactlyInAnyOrder(QUEUED, SENT, TIMEOUT);
+        // non-terminal targets ignore oneway
+        assertThat(DELIVERED.getAllowedFromStatuses(true)).containsExactlyInAnyOrder(QUEUED, SENT, TIMEOUT);
+        assertThat(SENT.getAllowedFromStatuses(true)).containsExactlyInAnyOrder(QUEUED, TIMEOUT);
     }
 
     @Test
@@ -67,8 +77,11 @@ class RpcStatusTest {
         // A terminal status must never be overwritable by any transition -> it appears in no allowed-from set.
         Set<RpcStatus> terminals = Set.of(SUCCESSFUL, FAILED, EXPIRED, DELETED);
         for (RpcStatus target : RpcStatus.values()) {
-            assertThat(target.getAllowedFromStatuses())
-                    .as("target %s must not allow overwriting a terminal status", target)
+            assertThat(target.getAllowedFromStatuses(false))
+                    .as("target %s (two-way) must not allow overwriting a terminal status", target)
+                    .doesNotContainAnyElementsOf(terminals);
+            assertThat(target.getAllowedFromStatuses(true))
+                    .as("target %s (one-way) must not allow overwriting a terminal status", target)
                     .doesNotContainAnyElementsOf(terminals);
         }
     }

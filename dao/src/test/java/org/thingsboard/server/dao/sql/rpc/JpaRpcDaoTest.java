@@ -185,8 +185,11 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         created.setOneway(true);
         rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, created);
 
-        // The one-way DELIVERED clause protects it (guard reads oneway from the existing row).
-        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.EXPIRED, null)).get(5, TimeUnit.SECONDS)).isFalse();
+        // One-way DELIVERED is terminal. A one-way write carries oneway=true (as the actor sets from the request),
+        // so its allowed-from set excludes DELIVERED and the guard blocks the overwrite.
+        Rpc staleExpired = rpc(id, deviceId, RpcStatus.EXPIRED, null);
+        staleExpired.setOneway(true);
+        assertThat(rpcDao.updateAsync(staleExpired).get(5, TimeUnit.SECONDS)).isFalse();
         assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id).getStatus()).isEqualTo(RpcStatus.DELIVERED);
     }
 
@@ -199,7 +202,9 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         rpcDao.saveAndFlush(TenantId.SYS_TENANT_ID, created);
 
         // Two-way DELIVERED is in-flight (awaiting response), so a genuine timeout may expire it.
-        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.EXPIRED, null)).get(5, TimeUnit.SECONDS)).isTrue();
+        Rpc expired = rpc(id, deviceId, RpcStatus.EXPIRED, null);
+        expired.setOneway(false);
+        assertThat(rpcDao.updateAsync(expired).get(5, TimeUnit.SECONDS)).isTrue();
         assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id).getStatus()).isEqualTo(RpcStatus.EXPIRED);
     }
 
@@ -275,6 +280,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         UUID q = saveRpc(deviceId, RpcStatus.QUEUED, false);
         UUID s = saveRpc(deviceId, RpcStatus.SENT, true);          // one-way SENT still reloaded (retry)
+        UUID t = saveRpc(deviceId, RpcStatus.TIMEOUT, false);      // delivery ack timed out -> in-flight, reloaded
         UUID twoWayDel = saveRpc(deviceId, RpcStatus.DELIVERED, false);
         saveRpc(deviceId, RpcStatus.DELIVERED, true);              // one-way DELIVERED -> excluded
         saveRpc(deviceId, RpcStatus.SUCCESSFUL, false);            // terminal -> excluded
@@ -282,7 +288,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         List<UUID> got = rpcDao.findInFlightForReload(TenantId.SYS_TENANT_ID, deviceId, new PageLink(100))
                 .getData().stream().map(Rpc::getUuidId).toList();
 
-        assertThat(got).containsExactlyInAnyOrder(q, s, twoWayDel);
+        assertThat(got).containsExactlyInAnyOrder(q, s, t, twoWayDel);
     }
 
     @Test

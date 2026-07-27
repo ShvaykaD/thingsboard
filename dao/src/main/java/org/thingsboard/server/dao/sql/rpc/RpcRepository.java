@@ -29,7 +29,7 @@ import java.util.UUID;
 
 public interface RpcRepository extends JpaRepository<RpcEntity, UUID> {
 
-    String IN_FLIGHT_RELOAD_PREDICATE = "status IN ('QUEUED','SENT') OR (status = 'DELIVERED' AND oneway = false)";
+    String IN_FLIGHT_RELOAD_PREDICATE = "status IN ('QUEUED','SENT','TIMEOUT') OR (status = 'DELIVERED' AND oneway = false)";
 
     Page<RpcEntity> findAllByTenantIdAndDeviceId(UUID tenantId, UUID deviceId, Pageable pageable);
 

@@ -325,6 +325,7 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
             return;
         }
         RpcStatus status = rpc.getStatus();
+        rpc.setOneway(msg.isOneway()); // authoritative request flag; the reloaded column may be NULL for legacy rows
         if (msg.isOneway() && status == RpcStatus.DELIVERED) {
             return;
         }
