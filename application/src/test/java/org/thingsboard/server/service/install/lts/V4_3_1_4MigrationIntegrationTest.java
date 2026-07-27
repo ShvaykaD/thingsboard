@@ -67,14 +67,15 @@ public class V4_3_1_4MigrationIntegrationTest extends AbstractControllerTest {
         long past = now - 60_000;
         long future = now + 60_000;
 
-        // Legacy (request_id IS NULL) rows the backfill MUST close -- 5 rows against a batch size of 2, so the
-        // loop must span 3 windows (2 + 2 + 1) for the cursor logic to be genuinely exercised.
+        // Legacy (request_id IS NULL) rows the backfill MUST close -- 6 rows against a batch size of 2, so the
+        // loop must span 3 windows (2 + 2 + 2) for the cursor logic to be genuinely exercised.
         List<UUID> stuck = List.of(
                 saveRpc(deviceId, UUID.fromString("9244c6c6-d932-43ca-91bb-b24482b08905"), "DELIVERED", false, past, null),
                 saveRpc(deviceId, UUID.fromString("c67c7357-1198-40f5-9d07-1a4a9f862720"), "DELIVERED", false, past, null),
                 saveRpc(deviceId, UUID.fromString("bde89223-7fe0-47e3-b190-88925ac7d070"), "DELIVERED", false, past, null),
                 saveRpc(deviceId, UUID.fromString("564b8b9d-5e06-4a71-b9d9-81b5b736595c"), "DELIVERED", false, past, null),
-                saveRpc(deviceId, UUID.fromString("31587a70-50c3-4f20-872c-70d4d3406a2d"), "SENT", true, past, null));
+                saveRpc(deviceId, UUID.fromString("31587a70-50c3-4f20-872c-70d4d3406a2d"), "SENT", true, past, null),
+                saveRpc(deviceId, UUID.fromString("1f6d2a4e-0c1b-4b7a-8e2d-2b9c7a1e6f30"), "TIMEOUT", false, past, null));
 
         // Rows the backfill MUST leave untouched.
         UUID oneWayDeliveredPastExpiry = saveRpc(deviceId, UUID.fromString("a553c35b-47a4-4906-825a-1be743e96d5d"), "DELIVERED", true, past, null); // terminal success

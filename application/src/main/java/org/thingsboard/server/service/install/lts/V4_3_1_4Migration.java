@@ -41,7 +41,7 @@ import java.util.UUID;
  * <p>
  * {@link #applyAfterCommit()} closes rows left stuck by earlier server versions that predate {@code request_id}
  * tracking: any {@code rpc} row with {@code request_id IS NULL} that is past its expiration and still sitting in
- * {@code SENT}, or in {@code DELIVERED} for a two-way call (one-way {@code DELIVERED} is already terminal
+ * {@code SENT} or {@code TIMEOUT}, or in {@code DELIVERED} for a two-way call (one-way {@code DELIVERED} is already terminal
  * success), is force-closed to {@code EXPIRED} with a canned response. It walks the {@code rpc} table by primary
  * key in keyset-paginated, self-committing batches so it never holds a long transaction or blocks concurrent
  * readers/writers; see the class-level backfill contract on {@link LtsMigration#applyAfterCommit()}.
@@ -70,7 +70,7 @@ public class V4_3_1_4Migration implements LtsMigration {
               FROM w WHERE rpc.id = w.id
                 AND rpc.request_id IS NULL
                 AND rpc.expiration_time < ?
-                AND (rpc.status = 'SENT' OR (rpc.status = 'DELIVERED' AND (rpc.request::jsonb ->> 'oneway') = 'false'))
+                AND (rpc.status IN ('SENT','TIMEOUT') OR (rpc.status = 'DELIVERED' AND (rpc.request::jsonb ->> 'oneway') = 'false'))
               RETURNING 1
             )
             SELECT (SELECT count(*) FROM u) AS updated_count,
