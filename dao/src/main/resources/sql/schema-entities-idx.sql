@@ -73,6 +73,9 @@ CREATE INDEX IF NOT EXISTS idx_edge_event_id ON edge_event(id);
 
 CREATE INDEX IF NOT EXISTS idx_rpc_tenant_id_device_id ON rpc(tenant_id, device_id);
 
+CREATE INDEX IF NOT EXISTS idx_rpc_in_flight ON rpc (tenant_id, device_id)
+    WHERE status IN ('QUEUED','SENT','TIMEOUT') OR (status = 'DELIVERED' AND oneway = false);
+
 CREATE INDEX IF NOT EXISTS idx_rule_node_external_id ON rule_node(rule_chain_id, external_id);
 
 CREATE INDEX IF NOT EXISTS idx_rule_node_type_id_configuration_version ON rule_node(type, id, configuration_version);
