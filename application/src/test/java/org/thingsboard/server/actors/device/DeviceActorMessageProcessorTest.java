@@ -168,6 +168,33 @@ public class DeviceActorMessageProcessorTest {
     }
 
     @Test
+    public void pastExpiryTimeoutRowIsExpiredOnReload() {
+        mockRpcInfra();
+        long pastExp = System.currentTimeMillis() - 60_000; // already expired
+        Rpc row = expiredRow(RpcStatus.TIMEOUT, 4, false /*two-way*/, pastExp);
+        stubInFlight(row);
+
+        processor.init(mock(TbActorCtx.class));
+
+        // a reloaded TIMEOUT row (delivery ack timed out, mid-retry) past its expiry must be force-closed to EXPIRED:
+        ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
+        verify(rpcService).update(eq(tenantId), captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(RpcStatus.EXPIRED);
+    }
+
+    @Test
+    public void inFlightTimeoutRowIsReTrackedNotExpiredOnReload() {
+        mockRpcInfra();
+        Rpc row = inFlightRow(RpcStatus.TIMEOUT, 8, System.currentTimeMillis());
+        stubInFlight(row);
+
+        processor.init(mock(TbActorCtx.class));
+
+        // a not-yet-expired TIMEOUT row is re-tracked for retry, not force-closed: no terminal update on reload
+        verify(rpcService, never()).update(any(), any());
+    }
+
+    @Test
     public void seedsCounterPastHighestReloadedId() {
         mockRpcInfra();
         stubInFlight(inFlightRow(RpcStatus.SENT, 5, System.currentTimeMillis()));
