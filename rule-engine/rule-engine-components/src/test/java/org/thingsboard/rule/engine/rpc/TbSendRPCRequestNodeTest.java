@@ -537,6 +537,60 @@ public class TbSendRPCRequestNodeTest {
                         : "Method is not present in the message!");
     }
 
+    @Test
+    public void givenOverrideResponseTimeoutDisabled_whenOnMsg_thenResponseTimeoutIsZero() {
+        given(ctxMock.getRpcService()).willReturn(rpcServiceMock);
+        given(ctxMock.getTenantId()).willReturn(TENANT_ID);
+
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.RPC_CALL_FROM_SERVER_TO_DEVICE)
+                .originator(DEVICE_ID)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(MSG_DATA)
+                .build();
+        node.onMsg(ctxMock, msg);
+
+        assertThat(captureRequest().getValue().getResponseTimeout()).isZero();
+    }
+
+    @Test
+    public void givenOverrideResponseTimeoutEnabled_whenOnMsg_thenResponseTimeoutIsTakenFromConfig() throws TbNodeException {
+        config.setOverrideResponseTimeout(true);
+        config.setTimeoutInSeconds(15);
+        node.init(ctxMock, new TbNodeConfiguration(JacksonUtil.valueToTree(config)));
+        given(ctxMock.getRpcService()).willReturn(rpcServiceMock);
+        given(ctxMock.getTenantId()).willReturn(TENANT_ID);
+
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.RPC_CALL_FROM_SERVER_TO_DEVICE)
+                .originator(DEVICE_ID)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(MSG_DATA)
+                .build();
+        node.onMsg(ctxMock, msg);
+
+        assertThat(captureRequest().getValue().getResponseTimeout()).isEqualTo(15_000L);
+    }
+
+    @Test
+    public void givenOverrideResponseTimeoutEnabledAndZeroTimeout_whenOnMsg_thenResponseTimeoutIsZero() throws TbNodeException {
+        config.setOverrideResponseTimeout(true);
+        config.setTimeoutInSeconds(0);
+        node.init(ctxMock, new TbNodeConfiguration(JacksonUtil.valueToTree(config)));
+        given(ctxMock.getRpcService()).willReturn(rpcServiceMock);
+        given(ctxMock.getTenantId()).willReturn(TENANT_ID);
+
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.RPC_CALL_FROM_SERVER_TO_DEVICE)
+                .originator(DEVICE_ID)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(MSG_DATA)
+                .build();
+        node.onMsg(ctxMock, msg);
+
+        assertThat(captureRequest().getValue().getResponseTimeout()).isZero();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"method", "params"})
     public void givenMethodOrParamsAreNotPresent_whenOnMsg_thenThrowsException(String key) {

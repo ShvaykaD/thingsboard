@@ -123,6 +123,10 @@ public class TbSendRPCRequestNode implements TbNode {
             String params = parseJsonData(json.get("params"));
             String additionalInfo = parseJsonData(json.get(DataConstants.ADDITIONAL_INFO));
 
+            long responseTimeout = config.isOverrideResponseTimeout() && config.getTimeoutInSeconds() > 0
+                    ? TimeUnit.SECONDS.toMillis(config.getTimeoutInSeconds())
+                    : 0L;
+
             RuleEngineDeviceRpcRequest request = RuleEngineDeviceRpcRequest.builder()
                     .oneway(oneway)
                     .method(json.get("method").getAsString())
@@ -137,6 +141,7 @@ public class TbSendRPCRequestNode implements TbNode {
                     .restApiCall(restApiCall)
                     .persisted(persisted)
                     .additionalInfo(additionalInfo)
+                    .responseTimeout(responseTimeout)
                     .build();
 
             ctx.getRpcService().sendRpcRequestToDevice(request, ruleEngineDeviceRpcResponse -> {
