@@ -56,6 +56,9 @@ import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.InstanceOfAssertFactories.throwable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -639,42 +642,51 @@ public class TbSendRPCRequestNodeTest {
     }
 
     @Test
-    public void givenOverrideResponseTimeoutDisabled_whenOnMsg_thenResponseTimeoutIsZero() {
+    public void givenOverrideResponseTimeoutDisabled_whenOnMsg_thenDeadlineIsExpirationTime() {
         given(ctxMock.getRpcService()).willReturn(rpcServiceMock);
         given(ctxMock.getTenantId()).willReturn(TENANT_ID);
+        long expirationTime = System.currentTimeMillis() + 120_000L;
 
+        TbMsgMetaData metadata = new TbMsgMetaData();
+        metadata.putValue(DataConstants.EXPIRATION_TIME, Long.toString(expirationTime));
         TbMsg msg = TbMsg.newMsg()
                 .type(TbMsgType.RPC_CALL_FROM_SERVER_TO_DEVICE)
                 .originator(DEVICE_ID)
-                .copyMetaData(TbMsgMetaData.EMPTY)
+                .copyMetaData(metadata)
                 .data(MSG_DATA)
                 .build();
         node.onMsg(ctxMock, msg);
 
-        assertThat(captureRequest().getValue().getResponseTimeout()).isZero();
+        assertThat(captureRequest().getValue().getRuleEngineResponseDeadline()).isEqualTo(expirationTime);
     }
 
     @Test
-    public void givenOverrideResponseTimeoutEnabled_whenOnMsg_thenResponseTimeoutIsTakenFromConfig() throws TbNodeException {
+    public void givenOverrideResponseTimeoutEnabled_whenOnMsg_thenDeadlineIsNowPlusTimeout() throws TbNodeException {
         config.setOverrideResponseTimeout(true);
         config.setTimeoutInSeconds(15);
         node.init(ctxMock, new TbNodeConfiguration(JacksonUtil.valueToTree(config)));
         given(ctxMock.getRpcService()).willReturn(rpcServiceMock);
         given(ctxMock.getTenantId()).willReturn(TENANT_ID);
 
+        TbMsgMetaData metadata = new TbMsgMetaData();
+        metadata.putValue(DataConstants.EXPIRATION_TIME, Long.toString(System.currentTimeMillis() + 600_000L));
         TbMsg msg = TbMsg.newMsg()
                 .type(TbMsgType.RPC_CALL_FROM_SERVER_TO_DEVICE)
                 .originator(DEVICE_ID)
-                .copyMetaData(TbMsgMetaData.EMPTY)
+                .copyMetaData(metadata)
                 .data(MSG_DATA)
                 .build();
-        node.onMsg(ctxMock, msg);
 
-        assertThat(captureRequest().getValue().getResponseTimeout()).isEqualTo(15_000L);
+        long before = System.currentTimeMillis();
+        node.onMsg(ctxMock, msg);
+        long after = System.currentTimeMillis();
+
+        assertThat(captureRequest().getValue().getRuleEngineResponseDeadline())
+                .isBetween(before + 15_000L, after + 15_000L);
     }
 
     @Test
-    public void givenOverrideResponseTimeoutEnabledAndZeroTimeout_whenOnMsg_thenResponseTimeoutIsZero() throws TbNodeException {
+    public void givenOverrideResponseTimeoutEnabledAndZeroTimeout_whenOnMsg_thenDeadlineIsNow() throws TbNodeException {
         config.setOverrideResponseTimeout(true);
         config.setTimeoutInSeconds(0);
         node.init(ctxMock, new TbNodeConfiguration(JacksonUtil.valueToTree(config)));
@@ -687,9 +699,35 @@ public class TbSendRPCRequestNodeTest {
                 .copyMetaData(TbMsgMetaData.EMPTY)
                 .data(MSG_DATA)
                 .build();
-        node.onMsg(ctxMock, msg);
 
-        assertThat(captureRequest().getValue().getResponseTimeout()).isZero();
+        long before = System.currentTimeMillis();
+        node.onMsg(ctxMock, msg);
+        long after = System.currentTimeMillis();
+
+        assertThat(captureRequest().getValue().getRuleEngineResponseDeadline()).isBetween(before, after);
+    }
+
+    @Test
+    public void givenNegativeTimeout_whenInit_thenThrowsUnrecoverableException() {
+        config.setTimeoutInSeconds(-1);
+        var configuration = new TbNodeConfiguration(JacksonUtil.valueToTree(config));
+        var nodeUnderTest = new TbSendRPCRequestNode();
+
+        assertThatThrownBy(() -> nodeUnderTest.init(ctxMock, configuration))
+                .isInstanceOf(TbNodeException.class)
+                .hasMessage("Timeout in seconds must be non-negative!")
+                .asInstanceOf(throwable(TbNodeException.class))
+                .extracting(TbNodeException::isUnrecoverable)
+                .isEqualTo(true);
+    }
+
+    @Test
+    public void givenZeroTimeout_whenInit_thenNoException() {
+        config.setTimeoutInSeconds(0);
+        var configuration = new TbNodeConfiguration(JacksonUtil.valueToTree(config));
+        var nodeUnderTest = new TbSendRPCRequestNode();
+
+        assertThatCode(() -> nodeUnderTest.init(ctxMock, configuration)).doesNotThrowAnyException();
     }
 
     @ParameterizedTest

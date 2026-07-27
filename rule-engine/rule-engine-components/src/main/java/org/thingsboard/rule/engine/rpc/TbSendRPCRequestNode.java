@@ -70,6 +70,9 @@ public class TbSendRPCRequestNode implements TbNode {
     @Override
     public void init(TbContext ctx, TbNodeConfiguration configuration) throws TbNodeException {
         config = TbNodeUtils.convert(configuration, TbSendRpcRequestNodeConfiguration.class);
+        if (config.getTimeoutInSeconds() < 0) {
+            throw new TbNodeException("Timeout in seconds must be non-negative!", true);
+        }
     }
 
     @Override
@@ -126,9 +129,9 @@ public class TbSendRPCRequestNode implements TbNode {
             String params = parseJsonData(json.get("params"));
             String additionalInfo = parseJsonData(json.get(DataConstants.ADDITIONAL_INFO));
 
-            long responseTimeout = config.isOverrideResponseTimeout() && config.getTimeoutInSeconds() > 0
-                    ? TimeUnit.SECONDS.toMillis(config.getTimeoutInSeconds())
-                    : 0L;
+            long ruleEngineResponseDeadline = config.isOverrideResponseTimeout()
+                    ? System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(config.getTimeoutInSeconds())
+                    : expirationTime;
 
             RuleEngineDeviceRpcRequest request = RuleEngineDeviceRpcRequest.builder()
                     .oneway(oneway)
@@ -144,7 +147,7 @@ public class TbSendRPCRequestNode implements TbNode {
                     .restApiCall(restApiCall)
                     .persisted(persisted)
                     .additionalInfo(additionalInfo)
-                    .responseTimeout(responseTimeout)
+                    .ruleEngineResponseDeadline(ruleEngineResponseDeadline)
                     .build();
 
             ctx.getRpcService().sendRpcRequestToDevice(request, response -> processRpcResponse(ctx, msg, response));
@@ -156,9 +159,8 @@ public class TbSendRPCRequestNode implements TbNode {
 
     private void processRpcResponse(TbContext ctx, TbMsg msg, RuleEngineDeviceRpcResponse response) {
         Optional<RpcError> error = response.getError();
-        String data = error.isPresent()
-                ? wrap("error", error.get().name())
-                : response.getResponse().orElse(TbMsg.EMPTY_JSON_OBJECT);
+        String data = error.map(rpcError -> wrap("error", rpcError.name()))
+                .orElseGet(() -> response.getResponse().orElse(TbMsg.EMPTY_JSON_OBJECT));
         if (config.isForceAck()) {
             TbMsg next = ctx.newMsg(msg.getQueueName(), msg.getType(), msg.getOriginator(), msg.getCustomerId(), msg.getMetaData(), data);
             if (error.isEmpty()) {

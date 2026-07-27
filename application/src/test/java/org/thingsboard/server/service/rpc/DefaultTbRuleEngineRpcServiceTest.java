@@ -29,7 +29,6 @@ import org.thingsboard.server.gen.transport.TransportProtos;
 
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,44 +63,5 @@ class DefaultTbRuleEngineRpcServiceTest {
 
         // THEN
         then(tbClusterServiceMock).should().pushNotificationToCore(serviceId, restApiCallResponseMsgProto, null);
-    }
-
-    @Test
-    public void givenNoResponseTimeout_whenResolveResponseTimeout_thenDerivedFromExpirationWithGrace() {
-        long now = 1_000_000L;
-        long expirationTime = now + 30_000L;
-
-        long timeout = DefaultTbRuleEngineRpcService.resolveResponseTimeout(expirationTime, 0L, now);
-
-        assertThat(timeout).isEqualTo(31_000L);
-    }
-
-    @Test
-    public void givenShorterResponseTimeout_whenResolveResponseTimeout_thenResponseTimeoutWins() {
-        long now = 1_000_000L;
-        long expirationTime = now + 30_000L;
-
-        long timeout = DefaultTbRuleEngineRpcService.resolveResponseTimeout(expirationTime, 5_000L, now);
-
-        assertThat(timeout).isEqualTo(5_000L);
-    }
-
-    @Test
-    public void givenLongerResponseTimeout_whenResolveResponseTimeout_thenExpirationWins() {
-        long now = 1_000_000L;
-        long expirationTime = now + 30_000L;
-
-        long timeout = DefaultTbRuleEngineRpcService.resolveResponseTimeout(expirationTime, 120_000L, now);
-
-        assertThat(timeout).isEqualTo(31_000L);
-    }
-
-    @Test
-    public void givenExpiredRequest_whenResolveResponseTimeout_thenNeverNegative() {
-        long now = 1_000_000L;
-        long expirationTime = now - 60_000L;
-
-        assertThat(DefaultTbRuleEngineRpcService.resolveResponseTimeout(expirationTime, 0L, now)).isEqualTo(1_000L);
-        assertThat(DefaultTbRuleEngineRpcService.resolveResponseTimeout(expirationTime, 5_000L, now)).isEqualTo(1_000L);
     }
 }

@@ -42,6 +42,6 @@ public final class RuleEngineDeviceRpcRequest {
     private final boolean restApiCall;
     private final String additionalInfo;
     private final Integer retries;
-    // Maximum time in millis the rule engine waits for the RPC processing result. 0 - derive from expirationTime.
-    private final long responseTimeout;
+    // Absolute time in millis after which the rule engine stops waiting for the RPC processing result.
+    private final long ruleEngineResponseDeadline;
 }
