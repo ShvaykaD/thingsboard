@@ -54,6 +54,10 @@ import java.util.concurrent.TimeUnit;
         nodeDetails = """
                 Expects messages with <code>method</code> and <code>params</code>.
                 <br><br>
+                By default the incoming message is acknowledged immediately and the RPC processing result is enqueued
+                as a separate message. With force acknowledge disabled, the incoming message itself is routed with the
+                result.
+                <br><br>
                 Sends the result via <strong>Success</strong> once the RPC is stored or answered:
                 <ul>
                   <li><strong>persistent RPC:</strong> the identifier of the stored request, e.g. <code>{"rpcId": "..."}</code>,
@@ -70,9 +74,6 @@ import java.util.concurrent.TimeUnit;
                   <li><code>{"error": "NO_ACTIVE_CONNECTION"}</code> - the device had no active session, so a non-persistent
                       request was never sent to it.</li>
                 </ul>
-                By default the incoming message is acknowledged immediately and the result is enqueued as a separate message.
-                With force acknowledge disabled, the incoming message itself is routed with the result.
-                <br><br>
                 If the RPC call request is originated by REST API call from user, will forward the response to user immediately.
                 """,
         configDirective = "tbActionNodeRpcRequestConfig",

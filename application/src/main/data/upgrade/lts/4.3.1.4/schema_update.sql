@@ -27,13 +27,17 @@ CREATE INDEX IF NOT EXISTS idx_rpc_in_flight ON rpc (tenant_id, device_id)
 
 -- RPC CALL REQUEST NODE FORCE ACK START
 
+WITH rpc_node AS (
+    SELECT id, configuration::jsonb AS config
+    FROM rule_node
+    WHERE type = 'org.thingsboard.rule.engine.rpc.TbSendRPCRequestNode' AND configuration_version = 0
+)
 UPDATE rule_node SET
-    configuration = (configuration::jsonb || jsonb_build_object(
-        'forceAck',
-        CASE WHEN configuration::jsonb ->> 'forceAck' = 'false' THEN false ELSE true END,
-        'overrideResponseTimeout',
-        CASE WHEN configuration::jsonb ->> 'overrideResponseTimeout' = 'true' THEN true ELSE false END))::varchar,
+    configuration = (rpc_node.config || jsonb_build_object(
+        'forceAck', COALESCE((rpc_node.config ->> 'forceAck')::boolean, true),
+        'overrideResponseTimeout', COALESCE((rpc_node.config ->> 'overrideResponseTimeout')::boolean, false)))::varchar,
     configuration_version = 1
-WHERE type = 'org.thingsboard.rule.engine.rpc.TbSendRPCRequestNode' AND configuration_version = 0;
+FROM rpc_node
+WHERE rule_node.id = rpc_node.id;
 
 -- RPC CALL REQUEST NODE FORCE ACK END
