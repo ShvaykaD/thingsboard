@@ -29,8 +29,10 @@ CREATE INDEX IF NOT EXISTS idx_rpc_in_flight ON rpc (tenant_id, device_id)
 
 UPDATE rule_node SET
     configuration = (configuration::jsonb || jsonb_build_object(
-        'forceAck', true,
-        'overrideResponseTimeout', false))::varchar,
+        'forceAck',
+        CASE WHEN configuration::jsonb ->> 'forceAck' = 'false' THEN false ELSE true END,
+        'overrideResponseTimeout',
+        CASE WHEN configuration::jsonb ->> 'overrideResponseTimeout' = 'true' THEN true ELSE false END))::varchar,
     configuration_version = 1
 WHERE type = 'org.thingsboard.rule.engine.rpc.TbSendRPCRequestNode' AND configuration_version = 0;
 

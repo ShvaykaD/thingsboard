@@ -157,6 +157,8 @@ public class TbSendRPCRequestNode implements TbNode {
         }
     }
 
+    // Not reusing TbAbstractExternalNode: its forceAck comes from the system-wide property, and its helpers rebuild
+    // the outgoing message with copyWithNewCtx(), which would change ts and correlationId on the force ack path.
     private void processRpcResponse(TbContext ctx, TbMsg msg, RuleEngineDeviceRpcResponse response) {
         Optional<RpcError> error = response.getError();
         String data = error.map(rpcError -> wrap("error", rpcError.name()))

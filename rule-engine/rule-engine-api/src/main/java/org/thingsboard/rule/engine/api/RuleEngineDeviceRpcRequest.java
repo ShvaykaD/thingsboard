@@ -43,5 +43,10 @@ public final class RuleEngineDeviceRpcRequest {
     private final String additionalInfo;
     private final Integer retries;
     // Absolute time in millis after which the rule engine stops waiting for the RPC processing result.
+    // Falls back to the RPC expiration time when a caller does not set it.
     private final long ruleEngineResponseDeadline;
+
+    public long getRuleEngineResponseDeadline() {
+        return ruleEngineResponseDeadline > 0 ? ruleEngineResponseDeadline : expirationTime;
+    }
 }
