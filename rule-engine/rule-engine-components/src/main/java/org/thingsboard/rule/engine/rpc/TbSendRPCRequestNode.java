@@ -51,8 +51,30 @@ import java.util.concurrent.TimeUnit;
         name = "rpc call request",
         configClazz = TbSendRpcRequestNodeConfiguration.class,
         nodeDescription = "Sends RPC call to device",
-        nodeDetails = "Expects messages with \"method\" and \"params\". Will forward response from device to next nodes." +
-                "If the RPC call request is originated by REST API call from user, will forward the response to user immediately.",
+        nodeDetails = """
+                Expects messages with <code>method</code> and <code>params</code>.
+                <br><br>
+                Sends the result via <strong>Success</strong> once the RPC is stored or answered:
+                <ul>
+                  <li><strong>persistent RPC:</strong> the identifier of the stored request, e.g. <code>{"rpcId": "..."}</code>,
+                      for both one-way and two-way calls. The response from the device is not forwarded by this node;</li>
+                  <li><strong>non-persistent two-way RPC:</strong> the response from the device. A response that reports
+                      a device-side error is also routed via Success, with the error text as the message data;</li>
+                  <li><strong>non-persistent one-way RPC:</strong> an empty message, once the request is sent to the device.</li>
+                </ul>
+                Sends the result via <strong>Failure</strong> when the RPC does not complete:
+                <ul>
+                  <li><code>{"error": "TIMEOUT"}</code> - no result was received before the RPC expiration time, or before
+                      the configured timeout if the rule engine timeout is overridden. A persistent request that is already
+                      expired when it reaches the device is stored with the EXPIRED status and never answered;</li>
+                  <li><code>{"error": "NO_ACTIVE_CONNECTION"}</code> - the device had no active session, so a non-persistent
+                      request was never sent to it.</li>
+                </ul>
+                By default the incoming message is acknowledged immediately and the result is enqueued as a separate message.
+                With force acknowledge disabled, the incoming message itself is routed with the result.
+                <br><br>
+                If the RPC call request is originated by REST API call from user, will forward the response to user immediately.
+                """,
         configDirective = "tbActionNodeRpcRequestConfig",
         icon = "call_made",
         docUrl = "https://thingsboard.io/docs/user-guide/rule-engine-2-0/nodes/action/rpc-call-request/",
