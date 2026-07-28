@@ -89,7 +89,7 @@ class DefaultTbRuleEngineRpcServiceTest {
         then(tbClusterServiceMock).should().pushNotificationToCore(serviceId, restApiCallResponseMsgProto, null);
     }
 
-    @ParameterizedTest
+    @ParameterizedTest(name = "deadlineOffset={0}, expirationOffset={1}, expectedDelay={2}")
     @MethodSource
     public void givenRpcRequest_whenSendRpcRequestToDevice_thenSchedulesTimeoutUsingResponseDeadline(
             Long deadlineOffset, long expirationOffset, long expectedDelay) {
