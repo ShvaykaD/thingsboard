@@ -152,9 +152,10 @@ public class TbSendRPCRequestNode implements TbNode {
             String params = parseJsonData(json.get("params"));
             String additionalInfo = parseJsonData(json.get(DataConstants.ADDITIONAL_INFO));
 
+            // -1 leaves the deadline unset, so the request falls back to the RPC expiration time
             long ruleEngineResponseDeadline = config.isOverrideResponseTimeout()
                     ? System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(config.getTimeoutInSeconds())
-                    : expirationTime;
+                    : -1;
 
             RuleEngineDeviceRpcRequest request = RuleEngineDeviceRpcRequest.builder()
                     .oneway(oneway)
