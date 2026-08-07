@@ -205,11 +205,21 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         if (timeout <= 0) {
             log.debug("[{}][{}] Ignoring message due to exp time reached, {}", deviceId, rpcId, request.getExpirationTime());
             if (persisted) {
-                createRpc(request, RpcStatus.EXPIRED, createdTime, requestId);
+                createRpc(request, RpcStatus.EXPIRED, createdTime, requestId); // no-op if the row already exists
+                // Hand the id back even though the command expired, so the caller can read the EXPIRED row
+                // instead of waiting out the core's safety net for an opaque TIMEOUT. Not gated on the create
+                // result: the reply carries only the id, and completion is remove-once.
+                sendRpcIdResponse(rpcId);
             }
             return;
-        } else if (persisted) {
-            createRpc(request, RpcStatus.QUEUED, createdTime, requestId);
+        } else if (persisted && !createRpc(request, RpcStatus.QUEUED, createdTime, requestId)) {
+            // Re-delivery of a command we already persisted (same rpcId). The existing row owns delivery - via its
+            // live pending entry, or via the reload on actor init. Re-sending here would execute it twice on the
+            // device. Still hand the id back so the caller's callback completes.
+            log.debug("[{}][{}] Duplicate persistent RPC delivery - skipping device send and pending registration",
+                    deviceId, rpcId);
+            sendRpcIdResponse(rpcId);
+            return;
         }
 
         boolean sent = false;
@@ -239,9 +249,7 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         }
 
         if (persisted) {
-            ObjectNode response = JacksonUtil.newObjectNode();
-            response.put("rpcId", rpcId.toString());
-            systemContext.getTbCoreDeviceRpcService().processRpcResponseFromDeviceActor(new FromDeviceRpcResponse(rpcId, JacksonUtil.toString(response), null));
+            sendRpcIdResponse(rpcId);
         }
 
         if (!persisted && request.isOneway() && sent) {
@@ -266,8 +274,15 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         return !md.isDelivered();
     }
 
-    private void createRpc(ToDeviceRpcRequest request, RpcStatus status, long createdTime, int requestId) {
-        systemContext.getTbRpcService().create(tenantId, buildRpc(request, status, null, createdTime, requestId));
+    private boolean createRpc(ToDeviceRpcRequest request, RpcStatus status, long createdTime, int requestId) {
+        return systemContext.getTbRpcService().create(tenantId, buildRpc(request, status, null, createdTime, requestId));
+    }
+
+    private void sendRpcIdResponse(UUID rpcId) {
+        ObjectNode response = JacksonUtil.newObjectNode();
+        response.put("rpcId", rpcId.toString());
+        systemContext.getTbCoreDeviceRpcService().processRpcResponseFromDeviceActor(
+                new FromDeviceRpcResponse(rpcId, JacksonUtil.toString(response), null));
     }
 
     private Rpc buildRpc(ToDeviceRpcRequest request, RpcStatus status, JsonNode response, long createdTime, int requestId) {

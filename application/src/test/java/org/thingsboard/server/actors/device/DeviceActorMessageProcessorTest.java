@@ -30,6 +30,7 @@ import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.common.data.rpc.ToDeviceRpcRequestBody;
+import org.thingsboard.server.common.msg.rpc.FromDeviceRpcResponse;
 import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequest;
 import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequestActorMsg;
 import org.thingsboard.server.dao.device.DeviceService;
@@ -64,6 +65,7 @@ public class DeviceActorMessageProcessorTest {
 
     DeviceActorMessageProcessor processor;
     TbRpcService rpcService;
+    TbCoreDeviceRpcService coreRpcService;
     TbCoreToTransportService toTransport;
 
     @Before
@@ -301,10 +303,99 @@ public class DeviceActorMessageProcessorTest {
         verify(toTransport, never()).process(any(), any());
     }
 
+    @Test
+    public void firstPersistedRpcRegistersAndSendsAsBefore() {
+        mockRpcInfra(); // create -> true
+        subscribeAsyncSession();
+
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
+
+        // The non-duplicate path must be untouched by the restructure: the command still reaches the device.
+        assertThat(publishedRequestIds()).containsExactly(0); // first rpcSeq
+    }
+
+    @Test
+    public void duplicatePersistedRpcSkipsSendAndPendingRegistration() {
+        mockRpcInfra();
+        given(rpcService.create(any(), any())).willReturn(false); // insert-if-absent matched an existing row
+        UUID sessionId = subscribeAsyncSession(); // active subscription: a send WOULD happen if not skipped
+
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
+
+        // Not sent while processing - the existing row owns delivery, re-sending would double-execute.
+        verify(toTransport, never()).process(any(), any());
+        // ...and nothing was registered as pending, so a later push has nothing to deliver either.
+        processor.sendPendingRequests(sessionId, "svc");
+        verify(toTransport, never()).process(any(), any());
+    }
+
+    @Test
+    public void duplicatePersistedRpcStillReturnsRpcIdToCaller() {
+        mockRpcInfra();
+        given(rpcService.create(any(), any())).willReturn(false);
+        UUID rpcId = UUID.randomUUID();
+
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
+
+        // The caller still gets its id back: completion is keyed by rpcId and remove-once, so replying for a
+        // duplicate is harmless - but NOT replying would hang the REST DeferredResult / rule-node callback.
+        ArgumentCaptor<FromDeviceRpcResponse> captor = ArgumentCaptor.forClass(FromDeviceRpcResponse.class);
+        verify(coreRpcService).processRpcResponseFromDeviceActor(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(rpcId);
+        assertThat(JacksonUtil.toJsonNode(captor.getValue().getResponse().orElseThrow()).get("rpcId").asText())
+                .isEqualTo(rpcId.toString());
+    }
+
+    @Test
+    public void expiredOnArrivalRpcReturnsRpcIdToCaller() {
+        mockRpcInfra(); // create -> true: first delivery of a command that arrived past its expiration
+        UUID rpcId = UUID.randomUUID();
+        subscribeAsyncSession();
+
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", expiredRequest(rpcId)));
+
+        // D6: the EXPIRED row is written AND the caller gets its id, so it can read that row instead of waiting
+        // out the core's safety net for an opaque TIMEOUT. Never sent to the device - it is already expired.
+        ArgumentCaptor<Rpc> rpcCaptor = ArgumentCaptor.forClass(Rpc.class);
+        verify(rpcService).create(eq(tenantId), rpcCaptor.capture());
+        assertThat(rpcCaptor.getValue().getStatus()).isEqualTo(RpcStatus.EXPIRED);
+        verify(toTransport, never()).process(any(), any());
+
+        ArgumentCaptor<FromDeviceRpcResponse> captor = ArgumentCaptor.forClass(FromDeviceRpcResponse.class);
+        verify(coreRpcService).processRpcResponseFromDeviceActor(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(rpcId);
+        assertThat(JacksonUtil.toJsonNode(captor.getValue().getResponse().orElseThrow()).get("rpcId").asText())
+                .isEqualTo(rpcId.toString());
+    }
+
+    @Test
+    public void duplicateExpiredOnArrivalRpcIsNoOpButStillReplies() {
+        mockRpcInfra();
+        given(rpcService.create(any(), any())).willReturn(false); // row already exists from an earlier delivery
+        UUID rpcId = UUID.randomUUID();
+        subscribeAsyncSession();
+
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", expiredRequest(rpcId)));
+
+        // Insert-if-absent turns the EXPIRED create into a no-op, so an already-SUCCESSFUL row is not clobbered.
+        // The reply is NOT gated on the insert result: it carries only the id, and completion is remove-once.
+        verify(rpcService).create(eq(tenantId), any());
+        verify(toTransport, never()).process(any(), any());
+        verify(coreRpcService).processRpcResponseFromDeviceActor(any());
+    }
+
     private void mockRpcInfra() {
         rpcService = mock(TbRpcService.class);
+        // Default: a brand-new command, so insert-if-absent reports a real insert. Duplicate tests override this.
+        given(rpcService.create(any(), any())).willReturn(true);
         given(systemContext.getTbRpcService()).willReturn(rpcService);
-        given(systemContext.getTbCoreDeviceRpcService()).willReturn(mock(TbCoreDeviceRpcService.class));
+        coreRpcService = mock(TbCoreDeviceRpcService.class);
+        given(systemContext.getTbCoreDeviceRpcService()).willReturn(coreRpcService);
         given(systemContext.getServiceId()).willReturn("svc");
         toTransport = mock(TbCoreToTransportService.class);
         given(systemContext.getTbCoreToTransportService()).willReturn(toTransport);
@@ -319,11 +410,26 @@ public class DeviceActorMessageProcessorTest {
     }
 
     private void pushViaAsyncSession() {
+        processor.sendPendingRequests(subscribeAsyncSession(), "svc");
+    }
+
+    private UUID subscribeAsyncSession() {
         UUID sessionId = UUID.randomUUID();
         SessionInfo sessionInfo = new SessionInfo(SessionType.ASYNC, "svc");
         processor.sessions.put(sessionId, new SessionInfoMetaData(sessionInfo));
         processor.rpcSubscriptions.put(sessionId, sessionInfo);
-        processor.sendPendingRequests(sessionId, "svc");
+        return sessionId;
+    }
+
+    private ToDeviceRpcRequest persistedRequest(UUID rpcId) {
+        return new ToDeviceRpcRequest(rpcId, tenantId, deviceId, false, System.currentTimeMillis() + 60_000,
+                new ToDeviceRpcRequestBody("m", "{}"), true, null, null); // persisted=true, oneway=false
+    }
+
+    private ToDeviceRpcRequest expiredRequest(UUID rpcId) {
+        // expirationTime already in the past -> the actor's `timeout <= 0` branch
+        return new ToDeviceRpcRequest(rpcId, tenantId, deviceId, false, System.currentTimeMillis() - 1,
+                new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
     }
 
     private List<Integer> publishedRequestIds() {
