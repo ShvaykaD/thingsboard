@@ -71,9 +71,12 @@ public class TbRpcService {
         }
     }
 
-    public void create(TenantId tenantId, Rpc rpc) {
-        rpcService.save(rpc);
-        executorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
+    public boolean create(TenantId tenantId, Rpc rpc) {
+        boolean inserted = rpcService.create(rpc);
+        if (inserted) {
+            executorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
+        }
+        return inserted;
     }
 
     public void update(TenantId tenantId, Rpc rpc) {

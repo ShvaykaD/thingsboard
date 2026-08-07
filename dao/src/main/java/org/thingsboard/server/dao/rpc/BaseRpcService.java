@@ -49,9 +49,9 @@ public class BaseRpcService implements RpcService {
     private final RpcDao rpcDao;
 
     @Override
-    public Rpc save(Rpc rpc) {
-        log.trace("Executing save, [{}]", rpc);
-        return rpcDao.save(rpc.getTenantId(), rpc);
+    public boolean create(Rpc rpc) {
+        log.trace("Executing create, [{}]", rpc);
+        return rpcDao.createIfAbsent(rpc.getTenantId(), rpc);
     }
 
     @Override

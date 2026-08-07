@@ -46,6 +46,7 @@ import org.thingsboard.server.common.data.asset.Asset;
 import org.thingsboard.server.common.data.device.profile.DeviceProfileData;
 import org.thingsboard.server.common.data.device.profile.MqttDeviceProfileTransportConfiguration;
 import org.thingsboard.server.common.data.edge.Edge;
+import org.thingsboard.server.common.data.id.RpcId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
@@ -78,6 +79,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -601,12 +603,15 @@ public class TenantServiceTest extends AbstractServiceTest {
     }
 
     private Rpc createAndSaveRpcFor(Tenant tenant, Device device) {
-        Rpc rpc = new Rpc();
+        // The create path is insert-if-absent and therefore needs the id up front - which is how it is used in
+        // production: the device actor builds the Rpc with the rpcId the request already carries.
+        Rpc rpc = new Rpc(new RpcId(UUID.randomUUID()));
         rpc.setTenantId(tenant.getId());
         rpc.setDeviceId(device.getId());
         rpc.setStatus(RpcStatus.QUEUED);
         rpc.setRequest(JacksonUtil.toJsonNode("{}"));
-        return rpcService.save(rpc);
+        rpcService.create(rpc);
+        return rpc;
     }
 
     private TbResource createAndSaveResourceFor(Tenant tenant) {

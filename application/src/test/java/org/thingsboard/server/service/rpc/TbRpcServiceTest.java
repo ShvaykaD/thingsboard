@@ -36,6 +36,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -72,16 +73,30 @@ public class TbRpcServiceTest {
     }
 
     @Test
-    public void createPersistsSynchronouslyThenPushesToRuleEngine() {
+    public void createReturnsTrueAndPushesToRuleEngineWhenInserted() {
         Rpc rpc = newRpc();
-        when(rpcService.save(rpc)).thenReturn(rpc);
+        when(rpcService.create(rpc)).thenReturn(true);
 
-        tbRpcService.create(rpc.getTenantId(), rpc);
+        // create must persist synchronously via the insert-if-absent path
+        assertTrue(tbRpcService.create(rpc.getTenantId(), rpc));
 
-        // create must persist synchronously via save(...)
-        verify(rpcService).save(rpc);
+        verify(rpcService).create(rpc);
         verify(clusterService, timeout(5000))
                 .pushMsgToRuleEngine(eq(rpc.getTenantId()), eq(rpc.getDeviceId()), any(TbMsg.class), isNull());
+    }
+
+    @Test
+    public void createDoesNotNotifyRuleEngineOnDuplicate() {
+        Rpc rpc = newRpc();
+        // Insert-if-absent matched an existing row: this command was already created by an earlier delivery,
+        // so publishing a second RPC_QUEUED for it would be a spurious, duplicate lifecycle event.
+        when(rpcService.create(rpc)).thenReturn(false);
+
+        assertFalse(tbRpcService.create(rpc.getTenantId(), rpc));
+
+        verify(rpcService).create(rpc);
+        verify(clusterService, after(500).never())
+                .pushMsgToRuleEngine(any(TenantId.class), any(DeviceId.class), any(TbMsg.class), isNull());
     }
 
     @Test
