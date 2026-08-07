@@ -255,6 +255,71 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
+    public void createIfAbsentInsertsWhenRowMissing() {
+        UUID id = UUID.randomUUID();
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        Rpc toCreate = rpc(id, deviceId, RpcStatus.QUEUED, null);
+        toCreate.setRequestId(3);
+        toCreate.setOneway(true);
+        toCreate.setAdditionalInfo(JacksonUtil.toJsonNode("{\"src\":\"test\"}"));
+
+        assertThat(rpcDao.createIfAbsent(TenantId.SYS_TENANT_ID, toCreate)).isTrue();
+
+        // Every column the native INSERT binds must round-trip - a missed column would silently write NULL.
+        Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
+        assertThat(stored).isNotNull();
+        assertThat(stored.getStatus()).isEqualTo(RpcStatus.QUEUED);
+        assertThat(stored.getRequestId()).isEqualTo(3);
+        assertThat(stored.getOneway()).isTrue();
+        assertThat(stored.getCreatedTime()).isEqualTo(toCreate.getCreatedTime());
+        assertThat(stored.getExpirationTime()).isEqualTo(toCreate.getExpirationTime());
+        assertThat(stored.getDeviceId()).isEqualTo(deviceId);
+        assertThat(stored.getRequest()).isEqualTo(JacksonUtil.toJsonNode("{\"method\":\"x\"}"));
+        assertThat(stored.getAdditionalInfo()).isEqualTo(JacksonUtil.toJsonNode("{\"src\":\"test\"}"));
+        assertThat(stored.getResponse()).isNull();
+    }
+
+    @Test
+    public void createIfAbsentIsNoOpWhenRowExists() {
+        UUID id = UUID.randomUUID();
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        Rpc original = rpc(id, deviceId, RpcStatus.QUEUED, null);
+        original.setRequestId(1);
+        assertThat(rpcDao.createIfAbsent(TenantId.SYS_TENANT_ID, original)).isTrue();
+
+        // A re-delivered command carries the SAME rpcId but a fresh rpcSeq and a later createdTime.
+        // The old JPA merge overwrote both; insert-if-absent must change nothing at all.
+        Rpc duplicate = rpc(id, deviceId, RpcStatus.QUEUED, null);
+        duplicate.setRequestId(99);
+        duplicate.setCreatedTime(original.getCreatedTime() + 5_000);
+        assertThat(rpcDao.createIfAbsent(TenantId.SYS_TENANT_ID, duplicate)).isFalse();
+
+        Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
+        assertThat(stored.getRequestId()).isEqualTo(1);
+        assertThat(stored.getCreatedTime()).isEqualTo(original.getCreatedTime());
+        assertThat(stored.getStatus()).isEqualTo(RpcStatus.QUEUED);
+    }
+
+    @Test
+    public void createIfAbsentDoesNotResurrectTerminalRow() throws Exception {
+        UUID id = UUID.randomUUID();
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        assertThat(rpcDao.createIfAbsent(TenantId.SYS_TENANT_ID, rpc(id, deviceId, RpcStatus.QUEUED, null))).isTrue();
+
+        // The two write paths compose: insert-if-absent creates, the guarded UPDATE completes.
+        assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}")))
+                .get(5, TimeUnit.SECONDS)).isTrue();
+
+        // The reported bug: a re-delivered create used to merge the finished row back to QUEUED with a new
+        // requestId, producing a second in-flight attempt against one row.
+        assertThat(rpcDao.createIfAbsent(TenantId.SYS_TENANT_ID, rpc(id, deviceId, RpcStatus.QUEUED, null))).isFalse();
+
+        Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
+        assertThat(stored.getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
+        assertThat(stored.getResponse()).isEqualTo(JacksonUtil.toJsonNode("{\"ok\":true}"));
+    }
+
+    @Test
     public void requestIdRoundTripsThroughSaveAndLoad() {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());

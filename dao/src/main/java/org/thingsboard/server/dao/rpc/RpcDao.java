@@ -26,6 +26,15 @@ import org.thingsboard.server.dao.Dao;
 
 public interface RpcDao extends Dao<Rpc> {
 
+    /**
+     * Insert-if-absent. The create path is idempotent by rpcId: a re-delivered command must not overwrite the
+     * row created by the first delivery. Deliberately not named save(...) - the inherited {@link Dao#save} is
+     * the unconditional upsert this method exists to avoid.
+     *
+     * @return true if a row was inserted, false if a row with this id already existed
+     */
+    boolean createIfAbsent(TenantId tenantId, Rpc rpc);
+
     ListenableFuture<Boolean> updateAsync(Rpc rpc);
 
     PageData<Rpc> findAllByDeviceId(TenantId tenantId, DeviceId deviceId, PageLink pageLink);
