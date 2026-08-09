@@ -58,6 +58,12 @@ import java.util.concurrent.TimeUnit;
                 as a separate message. With force acknowledge disabled, the incoming message itself is routed with the
                 result.
                 <br><br>
+                The request identifier is taken from the <code>requestUUID</code> metadata key. When that key is absent,
+                a new identifier is generated on every execution and is not written back to the message, so a
+                redelivered message is treated as a new command. Set a stable <code>requestUUID</code> to keep the
+                identifier the same across redeliveries. This matters most for persistent RPC with force acknowledge
+                disabled, where the incoming message stays uncommitted and can be reprocessed.
+                <br><br>
                 Sends the result via <strong>Success</strong> once the RPC is stored or answered:
                 <ul>
                   <li><strong>persistent RPC:</strong> the identifier of the stored request, e.g. <code>{"rpcId": "..."}</code>,
