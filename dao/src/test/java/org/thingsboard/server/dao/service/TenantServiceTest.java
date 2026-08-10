@@ -473,7 +473,7 @@ public class TenantServiceTest extends AbstractServiceTest {
         Edge edge = createAndSaveEdgeFor(tenant);
         OtaPackage otaPackage = createAndSaveOtaPackageFor(tenant, deviceProfile);
         TbResource resource = createAndSaveResourceFor(tenant);
-        Rpc rpc = createAndSaveRpcFor(tenant, device);
+        Rpc rpc = createRpcFor(tenant, device);
 
         tenantService.deleteTenant(tenant.getId());
 
@@ -602,7 +602,7 @@ public class TenantServiceTest extends AbstractServiceTest {
         Assert.assertEquals(0, pageDataCustomer.getTotalElements());
     }
 
-    private Rpc createAndSaveRpcFor(Tenant tenant, Device device) {
+    private Rpc createRpcFor(Tenant tenant, Device device) {
         // The create path is insert-if-absent and therefore needs the id up front - which is how it is used in
         // production: the device actor builds the Rpc with the rpcId the request already carries.
         Rpc rpc = new Rpc(new RpcId(UUID.randomUUID()));

@@ -335,12 +335,12 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     @Test
     public void findInFlightForReloadExcludesOneWayDeliveredAndTerminal() {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
-        UUID q = saveRpc(deviceId, RpcStatus.QUEUED, false);
-        UUID s = saveRpc(deviceId, RpcStatus.SENT, true);          // one-way SENT still reloaded (retry)
-        UUID t = saveRpc(deviceId, RpcStatus.TIMEOUT, false);      // delivery ack timed out -> in-flight, reloaded
-        UUID twoWayDel = saveRpc(deviceId, RpcStatus.DELIVERED, false);
-        saveRpc(deviceId, RpcStatus.DELIVERED, true);              // one-way DELIVERED -> excluded
-        saveRpc(deviceId, RpcStatus.SUCCESSFUL, false);            // terminal -> excluded
+        UUID q = seedRpc(deviceId, RpcStatus.QUEUED, false);
+        UUID s = seedRpc(deviceId, RpcStatus.SENT, true);          // one-way SENT still reloaded (retry)
+        UUID t = seedRpc(deviceId, RpcStatus.TIMEOUT, false);      // delivery ack timed out -> in-flight, reloaded
+        UUID twoWayDel = seedRpc(deviceId, RpcStatus.DELIVERED, false);
+        seedRpc(deviceId, RpcStatus.DELIVERED, true);              // one-way DELIVERED -> excluded
+        seedRpc(deviceId, RpcStatus.SUCCESSFUL, false);            // terminal -> excluded
 
         List<UUID> got = rpcDao.findInFlightForReload(TenantId.SYS_TENANT_ID, deviceId, new PageLink(100))
                 .getData().stream().map(Rpc::getUuidId).toList();
@@ -367,13 +367,13 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         assertThat(stored.getResponse()).isEqualTo(JacksonUtil.toJsonNode("{\"ok\":true}"));
     }
 
-    private UUID saveRpc(DeviceId deviceId, RpcStatus status, boolean oneway) {
+    private UUID seedRpc(DeviceId deviceId, RpcStatus status, boolean oneway) {
         UUID id = UUID.randomUUID();
-        Rpc toSave = rpc(id, deviceId, status, null);
-        toSave.setOneway(oneway);
-        toSave.setRequestId(null);
-        toSave.setExpirationTime(System.currentTimeMillis() + 60_000);
-        rpcDao.createIfAbsent(toSave);
+        Rpc toCreate = rpc(id, deviceId, status, null);
+        toCreate.setOneway(oneway);
+        toCreate.setRequestId(null);
+        toCreate.setExpirationTime(System.currentTimeMillis() + 60_000);
+        rpcDao.createIfAbsent(toCreate);
         return id;
     }
 

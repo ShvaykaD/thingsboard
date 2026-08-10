@@ -15,12 +15,14 @@
  */
 package org.thingsboard.server.dao.sql.rpc;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.dao.model.sql.RpcEntity;
-import org.thingsboard.server.dao.sqlts.insert.AbstractInsertRepository;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -30,7 +32,8 @@ import java.util.List;
 import java.util.Map;
 
 @Repository
-public class RpcUpdateRepository extends AbstractInsertRepository {
+@RequiredArgsConstructor
+public class RpcUpdateRepository {
 
     private static final String UPDATE =
             "UPDATE rpc SET status = ?, response = COALESCE(?, response) " +
@@ -48,6 +51,9 @@ public class RpcUpdateRepository extends AbstractInsertRepository {
         }
         return byStatus;
     }
+
+    private final JdbcTemplate jdbcTemplate;
+    private final TransactionTemplate transactionTemplate;
 
     List<Boolean> update(List<RpcEntity> updates) {
         return transactionTemplate.execute(status -> {

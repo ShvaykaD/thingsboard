@@ -353,7 +353,7 @@ public class DeviceActorMessageProcessorTest {
         processor.processRpcRequest(mock(TbActorCtx.class),
                 new ToDeviceRpcRequestActorMsg("svc", expiredRequest(rpcId)));
 
-        // D6: the EXPIRED row is written AND the caller gets its id, so it can read that row instead of waiting
+        // The EXPIRED row is written AND the caller gets its id, so it can read that row instead of waiting
         // out the core's safety net for an opaque TIMEOUT. Never sent to the device - it is already expired.
         ArgumentCaptor<Rpc> rpcCaptor = ArgumentCaptor.forClass(Rpc.class);
         verify(rpcService).createIfAbsent(eq(tenantId), rpcCaptor.capture());
