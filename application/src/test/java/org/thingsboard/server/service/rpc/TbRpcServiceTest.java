@@ -73,28 +73,28 @@ public class TbRpcServiceTest {
     }
 
     @Test
-    public void createReturnsTrueAndPushesToRuleEngineWhenInserted() {
+    public void createIfAbsentReturnsTrueAndPushesToRuleEngineWhenInserted() {
         Rpc rpc = newRpc();
-        when(rpcService.create(rpc)).thenReturn(true);
+        when(rpcService.createIfAbsent(rpc)).thenReturn(true);
 
         // create must persist synchronously via the insert-if-absent path
-        assertTrue(tbRpcService.create(rpc.getTenantId(), rpc));
+        assertTrue(tbRpcService.createIfAbsent(rpc.getTenantId(), rpc));
 
-        verify(rpcService).create(rpc);
+        verify(rpcService).createIfAbsent(rpc);
         verify(clusterService, timeout(5000))
                 .pushMsgToRuleEngine(eq(rpc.getTenantId()), eq(rpc.getDeviceId()), any(TbMsg.class), isNull());
     }
 
     @Test
-    public void createDoesNotNotifyRuleEngineOnDuplicate() {
+    public void createIfAbsentDoesNotNotifyRuleEngineOnDuplicate() {
         Rpc rpc = newRpc();
         // Insert-if-absent matched an existing row: this command was already created by an earlier delivery,
         // so publishing a second RPC_QUEUED for it would be a spurious, duplicate lifecycle event.
-        when(rpcService.create(rpc)).thenReturn(false);
+        when(rpcService.createIfAbsent(rpc)).thenReturn(false);
 
-        assertFalse(tbRpcService.create(rpc.getTenantId(), rpc));
+        assertFalse(tbRpcService.createIfAbsent(rpc.getTenantId(), rpc));
 
-        verify(rpcService).create(rpc);
+        verify(rpcService).createIfAbsent(rpc);
         verify(clusterService, after(500).never())
                 .pushMsgToRuleEngine(any(TenantId.class), any(DeviceId.class), any(TbMsg.class), isNull());
     }

@@ -611,7 +611,7 @@ public class TenantServiceTest extends AbstractServiceTest {
         rpc.setDeviceId(device.getId());
         rpc.setStatus(RpcStatus.QUEUED);
         rpc.setRequest(JacksonUtil.toJsonNode("{}"));
-        rpcService.create(rpc);
+        assertThat(rpcService.createIfAbsent(rpc)).isTrue();
         return rpc;
     }
 

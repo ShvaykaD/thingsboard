@@ -52,6 +52,10 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao, TenantEntityDao<Rpc> {
 
+    private static final String UNSUPPORTED_MERGE =
+            "RPC rows must be written via createIfAbsent(Rpc) or updateAsync(Rpc). The JPA merge is an unguarded " +
+            "upsert: it would clobber the row a previous delivery of the same rpcId created.";
+
     private final RpcRepository rpcRepository;
     private final RpcInsertRepository rpcInsertRepository;
     private final RpcUpdateRepository rpcUpdateRepository;
@@ -97,8 +101,18 @@ public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao,
     }
 
     @Override
-    public boolean createIfAbsent(TenantId tenantId, Rpc rpc) {
-        return rpcInsertRepository.save(new RpcEntity(rpc));
+    public boolean createIfAbsent(Rpc rpc) {
+        return rpcInsertRepository.insertIfAbsent(new RpcEntity(rpc));
+    }
+
+    @Override
+    public Rpc save(TenantId tenantId, Rpc rpc) {
+        throw new UnsupportedOperationException(UNSUPPORTED_MERGE);
+    }
+
+    @Override
+    public Rpc saveAndFlush(TenantId tenantId, Rpc rpc) {
+        throw new UnsupportedOperationException(UNSUPPORTED_MERGE);
     }
 
     @Override

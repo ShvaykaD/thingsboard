@@ -205,20 +205,25 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         if (timeout <= 0) {
             log.debug("[{}][{}] Ignoring message due to exp time reached, {}", deviceId, rpcId, request.getExpirationTime());
             if (persisted) {
-                createRpc(request, RpcStatus.EXPIRED, createdTime, requestId);
+                createRpcIfAbsent(request, RpcStatus.EXPIRED, createdTime, requestId);
                 // Reply even though the command expired, so the caller can read the EXPIRED row instead of waiting
                 // out the core's safety net for an opaque TIMEOUT. Not gated on the create result: the reply
                 // carries only the id, and completion is remove-once.
                 sendRpcIdResponse(rpcId);
             }
             return;
-        } else if (persisted && !createRpc(request, RpcStatus.QUEUED, createdTime, requestId)) {
-            // The existing row owns delivery - via its live pending entry, or via the reload on actor init.
-            // Re-sending here would execute the command twice on the device.
-            log.debug("[{}][{}] Duplicate persistent RPC delivery - skipping device send and pending registration",
-                    deviceId, rpcId);
-            sendRpcIdResponse(rpcId);
-            return;
+        }
+
+        if (persisted) {
+            boolean created = createRpcIfAbsent(request, RpcStatus.QUEUED, createdTime, requestId);
+            if (!created) {
+                // The existing row owns delivery - via its live pending entry, or via the reload on actor init.
+                // Re-sending here would execute the command twice on the device.
+                log.debug("[{}][{}] Duplicate persistent RPC delivery - skipping device send and pending registration",
+                        deviceId, rpcId);
+                sendRpcIdResponse(rpcId);
+                return;
+            }
         }
 
         boolean sent = false;
@@ -273,8 +278,8 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         return !md.isDelivered();
     }
 
-    private boolean createRpc(ToDeviceRpcRequest request, RpcStatus status, long createdTime, int requestId) {
-        return systemContext.getTbRpcService().create(tenantId, buildRpc(request, status, null, createdTime, requestId));
+    private boolean createRpcIfAbsent(ToDeviceRpcRequest request, RpcStatus status, long createdTime, int requestId) {
+        return systemContext.getTbRpcService().createIfAbsent(tenantId, buildRpc(request, status, null, createdTime, requestId));
     }
 
     private void sendRpcIdResponse(UUID rpcId) {

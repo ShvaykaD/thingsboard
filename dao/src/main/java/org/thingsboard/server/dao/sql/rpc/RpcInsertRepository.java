@@ -15,13 +15,15 @@
  */
 package org.thingsboard.server.dao.sql.rpc;
 
+import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.dao.model.sql.RpcEntity;
-import org.thingsboard.server.dao.sqlts.insert.AbstractInsertRepository;
 
 @Repository
-public class RpcInsertRepository extends AbstractInsertRepository {
+@RequiredArgsConstructor
+public class RpcInsertRepository {
 
     private static final String INSERT_IF_ABSENT =
             "INSERT INTO rpc (id, created_time, tenant_id, device_id, expiration_time, request, response, " +
@@ -29,7 +31,9 @@ public class RpcInsertRepository extends AbstractInsertRepository {
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
             "ON CONFLICT (id) DO NOTHING;";
 
-    boolean save(RpcEntity rpc) {
+    private final JdbcTemplate jdbcTemplate;
+
+    boolean insertIfAbsent(RpcEntity rpc) {
         return jdbcTemplate.update(INSERT_IF_ABSENT,
                 rpc.getUuid(),
                 rpc.getCreatedTime(),

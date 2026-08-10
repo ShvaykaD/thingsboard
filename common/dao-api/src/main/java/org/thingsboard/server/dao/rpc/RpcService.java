@@ -33,7 +33,7 @@ public interface RpcService extends EntityDaoService {
      *
      * @return true if a row was inserted, false if a row with this id already existed
      */
-    boolean create(Rpc rpc);
+    boolean createIfAbsent(Rpc rpc);
 
     ListenableFuture<Boolean> updateAsync(Rpc rpc);
 

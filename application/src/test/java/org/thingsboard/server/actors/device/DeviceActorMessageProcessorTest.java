@@ -113,13 +113,10 @@ public class DeviceActorMessageProcessorTest {
         mockRpcInfra();
 
         TbActorCtx ctx = mock(TbActorCtx.class);
-        ToDeviceRpcRequest request = new ToDeviceRpcRequest(UUID.randomUUID(), tenantId, deviceId,
-                false, System.currentTimeMillis() + 60_000, new ToDeviceRpcRequestBody("m", "{}"),
-                true, null, null); // persisted=true, oneway=false
-        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", request));
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
 
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
-        verify(rpcService).create(eq(tenantId), captor.capture());
+        verify(rpcService).createIfAbsent(eq(tenantId), captor.capture());
         assertThat(captor.getValue().getRequestId()).isEqualTo(0); // first rpcSeq
     }
 
@@ -204,12 +201,11 @@ public class DeviceActorMessageProcessorTest {
         processor.init(mock(TbActorCtx.class));
 
         // next brand-new persistent RPC must get id 6, not 0:
-        ToDeviceRpcRequest req = new ToDeviceRpcRequest(UUID.randomUUID(), tenantId, deviceId, false,
-                System.currentTimeMillis() + 60_000, new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
-        processor.processRpcRequest(mock(TbActorCtx.class), new ToDeviceRpcRequestActorMsg("svc", req));
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
 
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
-        verify(rpcService).create(eq(tenantId), captor.capture());
+        verify(rpcService).createIfAbsent(eq(tenantId), captor.capture());
         assertThat(captor.getValue().getRequestId()).isEqualTo(6);
     }
 
@@ -305,20 +301,23 @@ public class DeviceActorMessageProcessorTest {
 
     @Test
     public void firstPersistedRpcRegistersAndSendsAsBefore() {
-        mockRpcInfra(); // create -> true
+        mockRpcInfra(); // createIfAbsent -> true
+        UUID rpcId = UUID.randomUUID();
         subscribeAsyncSession();
 
         processor.processRpcRequest(mock(TbActorCtx.class),
-                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
 
-        // The non-duplicate path must be untouched by the restructure: the command still reaches the device.
+        // The non-duplicate path must be untouched by the restructure: the command still reaches the device,
+        // and the caller still gets its id back.
         assertThat(publishedRequestIds()).containsExactly(0); // first rpcSeq
+        assertRpcIdReplied(rpcId);
     }
 
     @Test
     public void duplicatePersistedRpcSkipsSendAndPendingRegistration() {
         mockRpcInfra();
-        given(rpcService.create(any(), any())).willReturn(false); // insert-if-absent matched an existing row
+        given(rpcService.createIfAbsent(any(), any())).willReturn(false); // insert-if-absent matched an existing row
         UUID sessionId = subscribeAsyncSession(); // active subscription: a send WOULD happen if not skipped
 
         processor.processRpcRequest(mock(TbActorCtx.class),
@@ -334,7 +333,7 @@ public class DeviceActorMessageProcessorTest {
     @Test
     public void duplicatePersistedRpcStillReturnsRpcIdToCaller() {
         mockRpcInfra();
-        given(rpcService.create(any(), any())).willReturn(false);
+        given(rpcService.createIfAbsent(any(), any())).willReturn(false);
         UUID rpcId = UUID.randomUUID();
 
         processor.processRpcRequest(mock(TbActorCtx.class),
@@ -342,11 +341,7 @@ public class DeviceActorMessageProcessorTest {
 
         // The caller still gets its id back: completion is keyed by rpcId and remove-once, so replying for a
         // duplicate is harmless - but NOT replying would hang the REST DeferredResult / rule-node callback.
-        ArgumentCaptor<FromDeviceRpcResponse> captor = ArgumentCaptor.forClass(FromDeviceRpcResponse.class);
-        verify(coreRpcService).processRpcResponseFromDeviceActor(captor.capture());
-        assertThat(captor.getValue().getId()).isEqualTo(rpcId);
-        assertThat(JacksonUtil.toJsonNode(captor.getValue().getResponse().orElseThrow()).get("rpcId").asText())
-                .isEqualTo(rpcId.toString());
+        assertRpcIdReplied(rpcId);
     }
 
     @Test
@@ -361,21 +356,17 @@ public class DeviceActorMessageProcessorTest {
         // D6: the EXPIRED row is written AND the caller gets its id, so it can read that row instead of waiting
         // out the core's safety net for an opaque TIMEOUT. Never sent to the device - it is already expired.
         ArgumentCaptor<Rpc> rpcCaptor = ArgumentCaptor.forClass(Rpc.class);
-        verify(rpcService).create(eq(tenantId), rpcCaptor.capture());
+        verify(rpcService).createIfAbsent(eq(tenantId), rpcCaptor.capture());
         assertThat(rpcCaptor.getValue().getStatus()).isEqualTo(RpcStatus.EXPIRED);
         verify(toTransport, never()).process(any(), any());
 
-        ArgumentCaptor<FromDeviceRpcResponse> captor = ArgumentCaptor.forClass(FromDeviceRpcResponse.class);
-        verify(coreRpcService).processRpcResponseFromDeviceActor(captor.capture());
-        assertThat(captor.getValue().getId()).isEqualTo(rpcId);
-        assertThat(JacksonUtil.toJsonNode(captor.getValue().getResponse().orElseThrow()).get("rpcId").asText())
-                .isEqualTo(rpcId.toString());
+        assertRpcIdReplied(rpcId);
     }
 
     @Test
     public void duplicateExpiredOnArrivalRpcIsNoOpButStillReplies() {
         mockRpcInfra();
-        given(rpcService.create(any(), any())).willReturn(false); // row already exists from an earlier delivery
+        given(rpcService.createIfAbsent(any(), any())).willReturn(false); // row already exists from an earlier delivery
         UUID rpcId = UUID.randomUUID();
         subscribeAsyncSession();
 
@@ -384,15 +375,15 @@ public class DeviceActorMessageProcessorTest {
 
         // Insert-if-absent turns the EXPIRED create into a no-op, so an already-SUCCESSFUL row is not clobbered.
         // The reply is NOT gated on the insert result: it carries only the id, and completion is remove-once.
-        verify(rpcService).create(eq(tenantId), any());
+        verify(rpcService).createIfAbsent(eq(tenantId), any());
         verify(toTransport, never()).process(any(), any());
-        verify(coreRpcService).processRpcResponseFromDeviceActor(any());
+        assertRpcIdReplied(rpcId);
     }
 
     private void mockRpcInfra() {
         rpcService = mock(TbRpcService.class);
         // Default: a brand-new command, so insert-if-absent reports a real insert. Duplicate tests override this.
-        given(rpcService.create(any(), any())).willReturn(true);
+        given(rpcService.createIfAbsent(any(), any())).willReturn(true);
         given(systemContext.getTbRpcService()).willReturn(rpcService);
         coreRpcService = mock(TbCoreDeviceRpcService.class);
         given(systemContext.getTbCoreDeviceRpcService()).willReturn(coreRpcService);
@@ -422,14 +413,29 @@ public class DeviceActorMessageProcessorTest {
     }
 
     private ToDeviceRpcRequest persistedRequest(UUID rpcId) {
-        return new ToDeviceRpcRequest(rpcId, tenantId, deviceId, false, System.currentTimeMillis() + 60_000,
-                new ToDeviceRpcRequestBody("m", "{}"), true, null, null); // persisted=true, oneway=false
+        return persistedRequest(rpcId, System.currentTimeMillis() + 60_000);
+    }
+
+    private ToDeviceRpcRequest persistedRequest(UUID rpcId, long expirationTime) {
+        return persistedRequest(rpcId, expirationTime, false);
+    }
+
+    private ToDeviceRpcRequest persistedRequest(UUID rpcId, long expirationTime, boolean oneway) {
+        return new ToDeviceRpcRequest(rpcId, tenantId, deviceId, oneway, expirationTime,
+                new ToDeviceRpcRequestBody("m", "{}"), true, null, null); // persisted=true
     }
 
     private ToDeviceRpcRequest expiredRequest(UUID rpcId) {
         // expirationTime already in the past -> the actor's `timeout <= 0` branch
-        return new ToDeviceRpcRequest(rpcId, tenantId, deviceId, false, System.currentTimeMillis() - 1,
-                new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
+        return persistedRequest(rpcId, System.currentTimeMillis() - 1);
+    }
+
+    private void assertRpcIdReplied(UUID rpcId) {
+        ArgumentCaptor<FromDeviceRpcResponse> captor = ArgumentCaptor.forClass(FromDeviceRpcResponse.class);
+        verify(coreRpcService).processRpcResponseFromDeviceActor(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(rpcId);
+        assertThat(JacksonUtil.toJsonNode(captor.getValue().getResponse().orElseThrow()).get("rpcId").asText())
+                .isEqualTo(rpcId.toString());
     }
 
     private List<Integer> publishedRequestIds() {
@@ -462,8 +468,7 @@ public class DeviceActorMessageProcessorTest {
     }
 
     private Rpc row(UUID rpcUuid, RpcStatus status, long createdTime, long expirationTime, boolean oneway) {
-        ToDeviceRpcRequest req = new ToDeviceRpcRequest(rpcUuid, tenantId, deviceId, oneway, expirationTime,
-                new ToDeviceRpcRequestBody("m", "{}"), true, null, null);
+        ToDeviceRpcRequest req = persistedRequest(rpcUuid, expirationTime, oneway);
         Rpc rpc = new Rpc(new RpcId(rpcUuid));
         rpc.setCreatedTime(createdTime);
         rpc.setExpirationTime(expirationTime);

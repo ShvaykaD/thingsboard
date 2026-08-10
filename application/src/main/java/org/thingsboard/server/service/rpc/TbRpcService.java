@@ -71,8 +71,8 @@ public class TbRpcService {
         }
     }
 
-    public boolean create(TenantId tenantId, Rpc rpc) {
-        boolean inserted = rpcService.create(rpc);
+    public boolean createIfAbsent(TenantId tenantId, Rpc rpc) {
+        boolean inserted = rpcService.createIfAbsent(rpc);
         if (inserted) {
             executorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
         }
