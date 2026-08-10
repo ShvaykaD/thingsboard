@@ -205,17 +205,16 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         if (timeout <= 0) {
             log.debug("[{}][{}] Ignoring message due to exp time reached, {}", deviceId, rpcId, request.getExpirationTime());
             if (persisted) {
-                createRpc(request, RpcStatus.EXPIRED, createdTime, requestId); // no-op if the row already exists
-                // Hand the id back even though the command expired, so the caller can read the EXPIRED row
-                // instead of waiting out the core's safety net for an opaque TIMEOUT. Not gated on the create
-                // result: the reply carries only the id, and completion is remove-once.
+                createRpc(request, RpcStatus.EXPIRED, createdTime, requestId);
+                // Reply even though the command expired, so the caller can read the EXPIRED row instead of waiting
+                // out the core's safety net for an opaque TIMEOUT. Not gated on the create result: the reply
+                // carries only the id, and completion is remove-once.
                 sendRpcIdResponse(rpcId);
             }
             return;
         } else if (persisted && !createRpc(request, RpcStatus.QUEUED, createdTime, requestId)) {
-            // Re-delivery of a command we already persisted (same rpcId). The existing row owns delivery - via its
-            // live pending entry, or via the reload on actor init. Re-sending here would execute it twice on the
-            // device. Still hand the id back so the caller's callback completes.
+            // The existing row owns delivery - via its live pending entry, or via the reload on actor init.
+            // Re-sending here would execute the command twice on the device.
             log.debug("[{}][{}] Duplicate persistent RPC delivery - skipping device send and pending registration",
                     deviceId, rpcId);
             sendRpcIdResponse(rpcId);
