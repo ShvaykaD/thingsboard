@@ -15,7 +15,6 @@
  */
 package org.thingsboard.server.dao.sql.rpc;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.stereotype.Repository;
 import org.thingsboard.common.util.JacksonUtil;
@@ -57,7 +56,7 @@ public class RpcUpdateRepository extends AbstractInsertRepository {
                 public void setValues(PreparedStatement ps, int i) throws SQLException {
                     RpcEntity rpc = updates.get(i);
                     ps.setString(1, rpc.getStatus().name());
-                    ps.setString(2, toJsonStr(rpc.getResponse()));
+                    ps.setString(2, JacksonUtil.toString(rpc.getResponse()));
                     ps.setObject(3, rpc.getUuid());
                     ps.setArray(4, ps.getConnection().createArrayOf("varchar", allowedFromArray(rpc)));
                 }
@@ -81,7 +80,4 @@ public class RpcUpdateRepository extends AbstractInsertRepository {
         return byStatus.get(rpc.getStatus());
     }
 
-    private String toJsonStr(JsonNode node) {
-        return node == null ? null : replaceNullChars(JacksonUtil.toString(node));
-    }
 }

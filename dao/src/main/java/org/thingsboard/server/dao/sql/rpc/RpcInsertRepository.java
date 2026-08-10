@@ -15,7 +15,6 @@
  */
 package org.thingsboard.server.dao.sql.rpc;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Repository;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.dao.model.sql.RpcEntity;
@@ -45,16 +44,12 @@ public class RpcInsertRepository extends AbstractInsertRepository {
                 rpc.getTenantId(),
                 rpc.getDeviceId(),
                 rpc.getExpirationTime(),
-                toJsonStr(rpc.getRequest()),
-                toJsonStr(rpc.getResponse()),
-                toJsonStr(rpc.getAdditionalInfo()),
+                JacksonUtil.toString(rpc.getRequest()),
+                JacksonUtil.toString(rpc.getResponse()),
+                JacksonUtil.toString(rpc.getAdditionalInfo()),
                 rpc.getStatus().name(),
                 rpc.getRequestId(),
                 rpc.getOneway()) > 0;
-    }
-
-    private String toJsonStr(JsonNode node) {
-        return node == null ? null : replaceNullChars(JacksonUtil.toString(node));
     }
 
 }
