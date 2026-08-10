@@ -606,6 +606,7 @@ public class TenantServiceTest extends AbstractServiceTest {
         // The create path is insert-if-absent and therefore needs the id up front - which is how it is used in
         // production: the device actor builds the Rpc with the rpcId the request already carries.
         Rpc rpc = new Rpc(new RpcId(UUID.randomUUID()));
+        rpc.setCreatedTime(System.currentTimeMillis());
         rpc.setTenantId(tenant.getId());
         rpc.setDeviceId(device.getId());
         rpc.setStatus(RpcStatus.QUEUED);

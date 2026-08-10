@@ -15,7 +15,6 @@
  */
 package org.thingsboard.server.dao.sql.rpc;
 
-import com.datastax.oss.driver.api.core.uuid.Uuids;
 import com.google.common.util.concurrent.ListenableFuture;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -99,15 +98,7 @@ public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao,
 
     @Override
     public boolean createIfAbsent(TenantId tenantId, Rpc rpc) {
-        RpcEntity entity = new RpcEntity(rpc);
-        if (entity.getCreatedTime() == 0) {
-            // Mirrors JpaAbstractDao.save, which this method replaces on the RPC create path. The device actor
-            // always sets createdTime, but a 0 here would sort the row first forever in loadInFlightRpcs.
-            entity.setCreatedTime(entity.getUuid().version() == 1
-                    ? Uuids.unixTimestamp(entity.getUuid())
-                    : System.currentTimeMillis());
-        }
-        return rpcInsertRepository.save(entity);
+        return rpcInsertRepository.save(new RpcEntity(rpc));
     }
 
     @Override
