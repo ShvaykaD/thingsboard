@@ -1145,8 +1145,7 @@ public class MqttTransportHandler extends ChannelInboundHandlerAdapter implement
                 return (X509Certificate) certChain[0];
             }
         } catch (SSLPeerUnverifiedException e) {
-            log.warn(e.getMessage());
-            return null;
+            log.debug("[{}][{}] Client certificate is not available: {}", address, sessionId, e.getMessage());
         }
         return null;
     }
