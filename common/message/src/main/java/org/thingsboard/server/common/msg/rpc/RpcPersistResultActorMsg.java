@@ -24,11 +24,6 @@ import java.util.UUID;
 /**
  * Second half of a persistent RPC request: the batch write for {@code rpcId} has settled, so the device actor
  * may now reply the rpcId and send the command.
- * <p>
- * Told directly to the owning actor through the {@code TbActorCtx} captured when the request arrived - the same
- * way that request's expiry timeout is delivered - so it carries no tenant or device id and needs no
- * {@code ToDeviceActorNotificationMsg} routing through the single-threaded app dispatcher. It never leaves the
- * JVM, so it needs no protobuf mapping either.
  */
 @Data
 public class RpcPersistResultActorMsg implements TbActorMsg {

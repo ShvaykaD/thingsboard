@@ -124,9 +124,8 @@ public class TbSqlBlockingQueue<E, R> implements TbSqlQueue<E, R> {
                 log.info("Queue-{} [{}] queueSize [{}] totalAdded [{}] totalSaved [{}] totalFailed [{}]", index,
                         params.getLogName(), queueSize, stats.getTotal(), stats.getSuccessful(), stats.getFailed());
                 if (queueSize > params.getBatchSize()) {
-                    // More than a full batch is waiting, so writes are arriving faster than they drain. The queue
-                    // is unbounded, so this is the leading indicator of a storage stall - it shows up here well
-                    // before it shows up as heap pressure.
+                    // Writes are arriving faster than they drain. The queue is unbounded, so this surfaces a
+                    // storage stall well before it shows up as heap pressure.
                     log.warn("Queue-{} [{}] is falling behind: queueSize [{}] exceeds batchSize [{}]", index,
                             params.getLogName(), queueSize, params.getBatchSize());
                 }

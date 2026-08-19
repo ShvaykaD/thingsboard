@@ -329,7 +329,6 @@ public class DeviceActorMessageProcessorTest {
 
         processor.processRpcRequest(mock(TbActorCtx.class),
                 new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
-        // Insert-if-absent matched an existing row.
         deliverPersistResult(rpcId, 0, RpcPersistResult.DUPLICATE);
 
         // Not sent - the existing row owns delivery, re-sending would double-execute.
@@ -381,7 +380,6 @@ public class DeviceActorMessageProcessorTest {
 
         processor.processRpcRequest(mock(TbActorCtx.class),
                 new ToDeviceRpcRequestActorMsg("svc", expiredRequest(rpcId)));
-        // Row already exists from an earlier delivery.
         deliverPersistResult(rpcId, 0, RpcPersistResult.DUPLICATE);
 
         // Insert-if-absent turns the EXPIRED create into a no-op, so an already-SUCCESSFUL row is not clobbered.
@@ -410,8 +408,7 @@ public class DeviceActorMessageProcessorTest {
         processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
         mockRpcInfra();
 
-        // A arrived first but its row is not durable yet; B is durable. B must NOT be sent - it would reach the
-        // device ahead of A, reordering the commands the caller submitted.
+        // B is durable, A is not. Sending B would reorder the commands the caller submitted.
         registerEntry(0, false);
         registerEntry(1, true);
 
@@ -431,7 +428,6 @@ public class DeviceActorMessageProcessorTest {
 
         pushViaAsyncSession();
 
-        // Only the head goes out, and it is the first arrival.
         assertThat(publishedRequestIds()).containsExactly(0);
     }
 
@@ -462,7 +458,6 @@ public class DeviceActorMessageProcessorTest {
         deliverPersistResult(rpcB, 1, RpcPersistResult.INSERTED);
         verify(toTransport, never()).process(any(), any());
 
-        // A becomes durable and, being the head, goes out first.
         deliverPersistResult(rpcA, 0, RpcPersistResult.INSERTED);
         assertThat(publishedRequestIds()).containsExactly(0);
     }
@@ -545,13 +540,11 @@ public class DeviceActorMessageProcessorTest {
         mockRpcInfra();
         UUID rpcId = UUID.randomUUID();
 
-        // Turn 1 on the original actor: the create is enqueued, nothing is sent.
         processor.processRpcRequest(mock(TbActorCtx.class),
                 new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
         verify(toTransport, never()).process(any(), any());
 
-        // The actor is evicted before turn 2, so the self-tell is dropped. The row did become durable, so when
-        // the actor next starts init() reloads it and the command is delivered by the reload path instead.
+        // Evicted before turn 2, so the self-tell is dropped - the reload path must deliver it instead.
         processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
         stubInFlight(inFlightRow(RpcStatus.QUEUED, 0, System.currentTimeMillis()));
         processor.init(mock(TbActorCtx.class));
@@ -561,8 +554,7 @@ public class DeviceActorMessageProcessorTest {
         assertThat(publishedRequestIds()).containsExactly(0);
     }
 
-    // Captures the persist continuations by requestId so tests can resolve them in any order - which is the
-    // whole point: batch flushes for different rpcIds complete in an order unrelated to arrival.
+    // Keyed by requestId so a test can resolve them in any order, as batch flushes complete.
     private final Map<Integer, Consumer<RpcPersistResult>> continuations = new LinkedHashMap<>();
 
     private void mockRpcInfra() {
@@ -581,15 +573,13 @@ public class DeviceActorMessageProcessorTest {
         given(systemContext.getTbCoreToTransportService()).willReturn(toTransport);
     }
 
-    // Delivers turn 2 for one requestId, as the batch-flush callback would. Invoking the captured continuation
-    // first also asserts that turn 1 actually enqueued a create for this requestId.
+    // Delivers turn 2, as the batch-flush callback would. Fails if turn 1 never enqueued a create.
     private void deliverPersistResult(UUID rpcId, int requestId, RpcPersistResult result) {
         continuations.get(requestId).accept(result);
         processor.processRpcPersistResult(new RpcPersistResultActorMsg(rpcId, requestId, result));
     }
 
-    // Registers a pending entry directly, so the head-of-line rule can be exercised without driving a full
-    // create round trip. persisted=false models a create still queued for its batch insert.
+    // Registers a pending entry directly; persisted=false models a create still queued for its batch insert.
     private void registerEntry(int requestId, boolean persisted) {
         ToDeviceRpcRequestActorMsg actorMsg =
                 new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID()));

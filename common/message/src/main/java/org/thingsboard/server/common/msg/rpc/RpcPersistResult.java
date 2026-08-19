@@ -20,12 +20,7 @@ package org.thingsboard.server.common.msg.rpc;
  */
 public enum RpcPersistResult {
 
-    /** A row was inserted. The command is durable and may be sent to the device. */
     INSERTED,
-
-    /** A row with this id already existed, so that row owns delivery. Must not be sent again. */
     DUPLICATE,
-
-    /** The write failed. There is no durable row, so the command must neither be sent nor acknowledged. */
     FAILED
 }
