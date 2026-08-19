@@ -146,8 +146,7 @@ public class TbRpcServiceTest {
     @Test
     public void createIfAbsentResumesWithDuplicateAndSkipsTheRuleEngine() {
         Rpc rpc = newRpc();
-        // The row already existed, so its original create already published RPC_QUEUED. A second one would be a
-        // spurious duplicate lifecycle event.
+        // The original create already published RPC_QUEUED; a second one would be spurious.
         when(rpcService.createIfAbsentAsync(rpc)).thenReturn(Futures.immediateFuture(false));
         AtomicReference<RpcPersistResult> result = new AtomicReference<>();
 
@@ -161,7 +160,6 @@ public class TbRpcServiceTest {
     @Test
     public void createIfAbsentResumesWithFailedWhenTheWriteThrows() {
         Rpc rpc = newRpc();
-        // No durable row: the actor must learn this so it neither sends the command nor replies the rpcId.
         when(rpcService.createIfAbsentAsync(rpc))
                 .thenReturn(Futures.immediateFailedFuture(new RuntimeException("write failed")));
         AtomicReference<RpcPersistResult> result = new AtomicReference<>();
@@ -177,8 +175,7 @@ public class TbRpcServiceTest {
     public void createIfAbsentResumesTheActorBeforeTheRuleEnginePushRuns() {
         Rpc rpc = newRpc();
         when(rpcService.createIfAbsentAsync(rpc)).thenReturn(Futures.immediateFuture(true));
-        // The push runs on a notification stripe, the continuation on the continuation pool, so the actor is
-        // resumed without waiting for JSON serialization and the rule-engine publish to complete.
+        // Separate pools, so the actor is resumed without waiting for the rule engine publish to finish.
         List<String> order = new ArrayList<>();
         CountDownLatch pushed = new CountDownLatch(1);
         doAnswer(invocation -> {
@@ -205,10 +202,8 @@ public class TbRpcServiceTest {
         when(rpcService.createIfAbsentAsync(queued)).thenReturn(Futures.immediateFuture(true));
         when(rpcService.updateAsync(delivered)).thenReturn(Futures.immediateFuture(true));
 
-        // Hold the stripe inside the RPC_QUEUED push, then submit DELIVERED. If create and update notifications
-        // were not serialized on one rpcId stripe, the fast DELIVERED would overtake the sleeping QUEUED.
-        // Resolving both futures immediately and submitting in order would pass by construction and guard
-        // nothing.
+        // Hold the stripe inside the RPC_QUEUED push, then submit DELIVERED: without per-rpcId serialization the
+        // fast DELIVERED would overtake the sleeping QUEUED. Two immediate futures would pass by construction.
         CountDownLatch queuedStarted = new CountDownLatch(1);
         doAnswer(invocation -> {
             TbMsg msg = invocation.getArgument(2);

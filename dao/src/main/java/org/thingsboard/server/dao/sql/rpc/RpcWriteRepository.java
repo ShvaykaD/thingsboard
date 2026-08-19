@@ -32,9 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The only write path for the {@code rpc} table. Creates and status updates share one rpcId-striped queue, so a
- * single batch can carry both for the same command; this applies all inserts before all updates inside one
- * transaction, which is what keeps them in order.
+ * The only write path for the {@code rpc} table.
  */
 @Repository
 @RequiredArgsConstructor
@@ -72,18 +70,11 @@ public class RpcWriteRepository {
     }
 
     /**
-     * Applies one batch in a single transaction, all inserts before all updates. A status update coalesced into
-     * the same flush as its create would otherwise match no row, be reported as non-persisted, and leave a
-     * stranded QUEUED row behind.
+     * One transaction per batch, all inserts before all updates: an update coalesced into the same flush as its
+     * create would otherwise match no row and leave a stranded QUEUED row behind.
      * <p>
-     * Deliberately not built on {@code AbstractVersionedInsertRepository}: that base updates first and then
-     * inserts any row whose update matched nothing, which would resurrect an RPC deleted in the meantime - the
-     * bug {@code saveAsyncUpdateForDeletedRpcDoesNotResurrect} guards. It also reports version numbers where
-     * this path needs a per-row boolean.
-     * <p>
-     * Results are returned positionally against {@code writes}, not against the execution order. Each row's own
-     * affected-row count decides its result: an insert that conflicted reports false, which is how a redelivered
-     * command is recognised as a duplicate rather than treated as a fresh create.
+     * Must not be rebuilt on {@code AbstractVersionedInsertRepository}: that base updates first and inserts any
+     * row whose update matched nothing, resurrecting an RPC deleted in the meantime.
      */
     List<Boolean> write(List<RpcWrite> writes) {
         return transactionTemplate.execute(status -> {

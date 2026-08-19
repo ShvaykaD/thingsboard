@@ -18,9 +18,7 @@ package org.thingsboard.server.dao.sql.rpc;
 import org.thingsboard.server.dao.model.sql.RpcEntity;
 
 /**
- * One queued RPC write, tagged with the statement it needs. Creates and status updates share a single
- * rpcId-striped queue precisely so that one batch can never apply an update before the insert that creates
- * its row - see {@link RpcWriteRepository#write}.
+ * One queued RPC write, tagged with the statement it needs.
  */
 public record RpcWrite(RpcEntity entity, RpcWrite.Op op) {
 

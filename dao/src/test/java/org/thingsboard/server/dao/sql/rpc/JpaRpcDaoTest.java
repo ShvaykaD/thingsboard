@@ -82,7 +82,6 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
 
-        // Production create path: the QUEUED row is durable before the command is sent to the device.
         create(rpc(id, deviceId, RpcStatus.QUEUED, null));
 
         Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
@@ -105,7 +104,6 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         UUID idA = UUID.randomUUID();
         UUID idB = UUID.randomUUID(); // never created -> its update must report no match
 
-        // Row A exists (its create already flushed); B was never created.
         create(rpc(idA, deviceId, RpcStatus.QUEUED, null));
 
         // Drive the persist logic directly with a single, deterministically-coalesced update batch.
@@ -377,8 +375,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         return id;
     }
 
-    // Seeds a row through the batched create and waits for its flush, so a test can rely on the row existing
-    // before it asserts on anything that reads it.
+    // Seeds a row and waits for its flush, so a test can rely on it existing before asserting.
     private boolean create(Rpc rpc) throws Exception {
         return rpcDao.createIfAbsentAsync(rpc).get(5, TimeUnit.SECONDS);
     }
@@ -405,15 +402,13 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         UUID idA = UUID.randomUUID();
         UUID idB = UUID.randomUUID();
 
-        // A already exists; the batch then offers A again plus a brand-new B.
         create(rpc(idA, deviceId, RpcStatus.QUEUED, null));
 
         List<Boolean> results = rpcWriteRepository.write(List.of(
                 RpcWrite.insert(new RpcEntity(rpc(idA, deviceId, RpcStatus.QUEUED, null))),
                 RpcWrite.insert(new RpcEntity(rpc(idB, deviceId, RpcStatus.QUEUED, null)))));
 
-        // Positional, like the update rows: index 0 conflicted, index 1 inserted. Reporting a conflicted insert
-        // as true is how a redelivered command would be mistaken for a fresh create and sent to the device twice.
+        // A conflicted insert reported as true is how a redelivered command gets sent to the device twice.
         assertThat(results).containsExactly(false, true);
         assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, idB)).isNotNull();
     }
@@ -423,8 +418,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         UUID id = UUID.randomUUID();
 
-        // Same rpcId twice in one batch - a redelivered command coalesced into a single flush. The second
-        // statement must conflict against the first rather than raising a constraint violation.
+        // A redelivered command coalesced into one flush: the second must conflict, not raise.
         assertThat(rpcWriteRepository.write(List.of(
                 RpcWrite.insert(new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null))),
                 RpcWrite.insert(new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null))))))
@@ -436,14 +430,12 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         UUID id = UUID.randomUUID();
 
-        // Create and status update for the SAME rpcId coalesced into one flush, submitted update-first to prove
-        // the ordering comes from the operation tag and not from position in the list. If the update were
-        // applied first it would match no row and report false, stranding a QUEUED row.
+        // Submitted update-first, so ordering must come from the operation tag and not from list position:
+        // update-then-insert would match no row and strand a QUEUED one.
         List<Boolean> results = rpcWriteRepository.write(List.of(
                 RpcWrite.update(new RpcEntity(rpc(id, deviceId, RpcStatus.DELIVERED, null))),
                 RpcWrite.insert(new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null)))));
 
-        // Results stay positionally aligned to the submitted list, not to the execution order.
         assertThat(results).containsExactly(true, true);
 
         Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
@@ -471,8 +463,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         UUID id = UUID.randomUUID();
 
-        // Both writes land on the same rpcId stripe, so the update cannot be applied before the insert even
-        // when the two are coalesced into a single flush.
+        // Same rpcId stripe, so the update cannot be applied before the insert.
         var created = rpcDao.createIfAbsentAsync(rpc(id, deviceId, RpcStatus.QUEUED, null));
         var updated = rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.DELIVERED, null));
 

@@ -50,15 +50,10 @@ public class TbRpcService {
     private final RpcService rpcService;
     private final TbClusterService tbClusterService;
 
-    // Post-persist callbacks that publish RPC lifecycle events to the rule engine. Striped by rpcId so a
-    // command's events keep their order (e.g. RPC_QUEUED before RPC_DELIVERED).
+    // Striped by rpcId so one command's lifecycle events keep their order (RPC_QUEUED before RPC_DELIVERED).
     private final ExecutorService[] ruleEngineCallbackExecutors;
-    // Post-persist callbacks that resume the device actor once its create is durable, releasing the command for
-    // delivery. Deliberately a separate pool from the rule-engine stripes above: this one is on the delivery
-    // path, while those carry full-request JSON serialization plus a publish per event, so sharing them would
-    // let a queue stall or rule-engine backpressure hold up device sends. Needs no rpcId striping - delivery
-    // order is fixed by the actor before the write is even enqueued, and there is exactly one such callback per
-    // rpcId - so a plain fixed pool is enough.
+    // Separate from the stripes above so rule engine publishing is never on the command-delivery path: a stall
+    // there would otherwise hold up device sends. Needs no striping - the actor fixed delivery order already.
     private final ExecutorService deviceActorCallbackExecutor;
 
     public TbRpcService(RpcService rpcService, TbClusterService tbClusterService,
@@ -90,9 +85,8 @@ public class TbRpcService {
     }
 
     /**
-     * Enqueues the create onto the batched write queue and resumes the caller once the row's fate is known.
-     * The continuation is invoked exactly once, on the device-actor callback pool rather than on a rule-engine
-     * stripe, because it is what releases the command for delivery to the device.
+     * Enqueues the create onto the batched write queue and resumes the caller once the row's fate is known. The
+     * continuation is invoked exactly once.
      */
     public void createIfAbsent(TenantId tenantId, Rpc rpc, Consumer<RpcPersistResult> continuation) {
         DonAsynchron.withCallback(rpcService.createIfAbsentAsync(rpc),
@@ -100,12 +94,8 @@ public class TbRpcService {
                     RpcPersistResult result = Boolean.TRUE.equals(inserted)
                             ? RpcPersistResult.INSERTED : RpcPersistResult.DUPLICATE;
                     if (RpcPersistResult.INSERTED == result) {
-                        // Enqueue the notification on this rpcId's stripe BEFORE resuming the actor, so
-                        // RPC_QUEUED is queued ahead of any status notification the resumed actor goes on to
-                        // cause. Only the enqueue happens here; the push itself runs on the stripe, off this
-                        // path. Doing both steps in one callback keeps that order deterministic - registering
-                        // two separate future callbacks would rely on Guava listener ordering, which is not
-                        // specified.
+                        // Enqueue before resuming the actor, so RPC_QUEUED sits on the stripe ahead of any
+                        // status event the resumed actor causes. Only the enqueue happens here.
                         ruleEngineCallbackExecutorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
                     } else {
                         log.debug("[{}][{}][{}] Skipping RPC_QUEUED notification - a row for this RPC already existed",

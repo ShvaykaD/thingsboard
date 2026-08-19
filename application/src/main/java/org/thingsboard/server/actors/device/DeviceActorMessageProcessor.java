@@ -207,9 +207,8 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         }
 
         if (request.isPersisted()) {
-            // Turn 1: hand the row to the batched write queue and take a place in the pending map right away,
-            // on this thread, so arrival order is fixed before any flush can complete. Nothing is sent and no
-            // rpcId is replied until processRpcPersistResult confirms the row is durable.
+            // Registering on this thread fixes arrival order before any flush can complete. The send and the
+            // rpcId reply wait for processRpcPersistResult.
             createRpcIfAbsent(context, request, expired ? RpcStatus.EXPIRED : RpcStatus.QUEUED, createdTime, requestId);
             if (!expired) {
                 registerPendingRpcRequest(context, msg, requestId, false, false, false, timeout, createdTime);
@@ -221,9 +220,8 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
             return;
         }
 
-        // Non-persistent RPC never touches the database, so it keeps its single arrival turn - including the
-        // arrival-time isSendNewRpcAvailable gate, which stays correct here because the entry is registered only
-        // after the send decision.
+        // Non-persistent RPC keeps its single arrival turn: the gate below stays correct because the entry is
+        // registered only after the send decision.
         ToDeviceRpcRequestMsg rpcRequest = createToDeviceRpcRequestMsg(request, requestId);
         boolean sent = false;
         if (systemContext.isEdgesEnabled() && edgeId != null) {
@@ -250,17 +248,15 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
 
         ToDeviceRpcRequestMetadata md = toDeviceRpcPendingMap.get(requestId);
         if (md == null) {
-            // Expired at arrival, so never registered - or the entry was already completed or removed. The reply
-            // carries only the id and completion is remove-once, so replying lets the caller read the row
-            // instead of waiting out the core's timeout.
+            // Expired at arrival, or already completed. Replying is safe - the reply carries only the id and
+            // completion is remove-once - and lets the caller read the row instead of waiting for a timeout.
             if (RpcPersistResult.FAILED != result) {
                 sendRpcIdResponse(rpcId);
             }
             return;
         }
         if (RpcPersistResult.FAILED == result) {
-            // No durable row, so the command must not be sent and the caller must not be given an rpcId to
-            // read. It times out via DefaultTbCoreDeviceRpcService, as it did when the create was blocking.
+            // No durable row: no send, and no rpcId to read. The caller times out via DefaultTbCoreDeviceRpcService.
             log.debug("[{}][{}][{}] RPC create did not persist - skipping device send", deviceId, rpcId, requestId);
             releasePendingRpc(rpcId, requestId, "RPC create failed to persist!");
             return;
@@ -292,8 +288,6 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         log.debug("[{}][{}][{}] RPC request is {}", deviceId, rpcId, requestId, md.isSent() ? "sent!" : "NOT sent!");
     }
 
-    // Fan a command out to every subscribed session. Shared by the non-persistent arrival path and the
-    // persistent persist continuation, so both keep identical sync-session cleanup.
     private boolean sendToSubscriptions(ToDeviceRpcRequestMsg rpcRequest, UUID rpcId, int requestId) {
         boolean sent = !rpcSubscriptions.isEmpty();
         Set<UUID> syncSessionSet = new HashSet<>();
@@ -345,10 +339,8 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
     private void createRpcIfAbsent(TbActorCtx context, ToDeviceRpcRequest request, RpcStatus status, long createdTime, int requestId) {
         UUID rpcId = request.getId();
         Rpc rpc = buildRpc(request, status, null, createdTime, requestId);
-        // Self-tell through the captured ctx, exactly as scheduleMsgWithDelay delivers this RPC's expiry timeout
-        // from the scheduler thread. Skips the app and tenant actor hops - the app dispatcher is single-threaded.
-        // If this actor is evicted before the continuation lands the tell is dropped, but the row is durable, so
-        // init() reloads and sends it when the actor next starts.
+        // Self-tell through the captured ctx, as scheduleMsgWithDelay does for this RPC's expiry timeout. If the
+        // actor is evicted first the tell is dropped, but the row is durable, so init() reloads and sends it.
         systemContext.getTbRpcService().createIfAbsent(tenantId, rpc, result ->
                 context.tellWithHighPriority(new RpcPersistResultActorMsg(rpcId, requestId, result)));
     }
@@ -574,17 +566,16 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
                         return md.isPersisted();
                     });
         }
-        // The persisted filter is head-of-line on purpose: an entry whose batch insert has not confirmed must
-        // block the ones behind it rather than be stepped over. Stepping over it would let a later command whose
-        // insert flushed first reach the device first.
+        // Head-of-line on purpose: an entry whose insert has not confirmed must block the ones behind it. Step
+        // over it and a later command whose insert flushed first reaches the device first.
         return toDeviceRpcPendingMap.entrySet().stream()
                 .filter(e -> undelivered(e.getValue())).findFirst()
                 .filter(e -> e.getValue().isPersisted());
     }
 
     /**
-     * Side-effect-free counterpart of {@link #getFirstRpc()} for the persist continuation. Calling getFirstRpc
-     * there would schedule the await-response future merely because a row became durable.
+     * Side-effect-free counterpart of {@link #getFirstRpc()}: that one would schedule the await-response future
+     * merely because a row became durable.
      */
     private boolean isEligibleHead(int requestId) {
         Optional<Map.Entry<Integer, ToDeviceRpcRequestMetadata>> head =
@@ -616,8 +607,8 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
             ToDeviceRpcRequestMsg rpcRequest = createToDeviceRpcRequestMsg(request, requestId);
             log.debug("[{}][{}][{}][{}] Send pending RPC request to transport ...", deviceId, sessionId, rpcId, requestId);
             sendToTransport(rpcRequest, sessionId, nodeId);
-            // Needed for the timeout to distinguish TIMEOUT from NO_ACTIVE_CONNECTION: a sequential first-send
-            // now routes through here instead of the arrival path that used to set this.
+            // A sequential first-send routes through here now, and the timeout reads this to pick TIMEOUT over
+            // NO_ACTIVE_CONNECTION.
             entry.getValue().setSent(true);
         };
     }
