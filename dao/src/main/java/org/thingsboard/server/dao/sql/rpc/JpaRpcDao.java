@@ -53,12 +53,11 @@ import java.util.function.Function;
 public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao, TenantEntityDao<Rpc> {
 
     private static final String UNSUPPORTED_MERGE =
-            "RPC rows must be written via createIfAbsent(Rpc) or updateAsync(Rpc). The JPA merge is an unguarded " +
-            "upsert: it would clobber the row a previous delivery of the same rpcId created.";
+            "RPC rows must be written via createIfAbsentAsync(Rpc) or updateAsync(Rpc). The JPA merge is an " +
+            "unguarded upsert: it would clobber the row a previous delivery of the same rpcId created.";
 
     private final RpcRepository rpcRepository;
-    private final RpcInsertRepository rpcInsertRepository;
-    private final RpcUpdateRepository rpcUpdateRepository;
+    private final RpcWriteRepository rpcWriteRepository;
     private final ScheduledLogExecutorComponent logExecutor;
     private final StatsFactory statsFactory;
 
@@ -73,7 +72,7 @@ public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao,
     @Value("${sql.batch_sort:true}")
     private boolean batchSortEnabled;
 
-    private TbSqlBlockingQueueWrapper<RpcEntity, Boolean> queue;
+    private TbSqlBlockingQueueWrapper<RpcWrite, Boolean> queue;
 
     @PostConstruct
     private void init() {
@@ -86,10 +85,12 @@ public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao,
                 .batchSortEnabled(batchSortEnabled)
                 .withResponse(true)
                 .build();
-        Function<RpcEntity, Integer> hashcodeFunction = entity -> entity.getUuid().hashCode();
+        // Striping by rpcId keeps every write for one command on one worker, which is what lets a create and
+        // its later status updates share a batch without racing.
+        Function<RpcWrite, Integer> hashcodeFunction = write -> write.entity().getUuid().hashCode();
         queue = new TbSqlBlockingQueueWrapper<>(params, hashcodeFunction, batchThreads, statsFactory);
-        queue.init(logExecutor, entries -> rpcUpdateRepository.update(entries),
-                Comparator.comparing(RpcEntity::getUuid),
+        queue.init(logExecutor, entries -> rpcWriteRepository.write(entries),
+                Comparator.comparing((RpcWrite write) -> write.entity().getUuid()),
                 Function.identity());
     }
 
@@ -98,11 +99,6 @@ public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao,
         if (queue != null) {
             queue.destroy();
         }
-    }
-
-    @Override
-    public boolean createIfAbsent(Rpc rpc) {
-        return rpcInsertRepository.insertIfAbsent(new RpcEntity(rpc));
     }
 
     @Override
@@ -116,8 +112,13 @@ public class JpaRpcDao extends JpaAbstractDao<RpcEntity, Rpc> implements RpcDao,
     }
 
     @Override
+    public ListenableFuture<Boolean> createIfAbsentAsync(Rpc rpc) {
+        return queue.add(RpcWrite.insert(new RpcEntity(rpc)));
+    }
+
+    @Override
     public ListenableFuture<Boolean> updateAsync(Rpc rpc) {
-        return queue.add(new RpcEntity(rpc));
+        return queue.add(RpcWrite.update(new RpcEntity(rpc)));
     }
 
     @Override

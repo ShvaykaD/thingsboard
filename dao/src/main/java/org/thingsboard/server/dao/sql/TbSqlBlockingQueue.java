@@ -119,9 +119,17 @@ public class TbSqlBlockingQueue<E, R> implements TbSqlQueue<E, R> {
         });
 
         logExecutor.scheduleAtFixedRate(() -> {
-            if (!queue.isEmpty() || stats.getTotal() > 0 || stats.getSuccessful() > 0 || stats.getFailed() > 0) {
+            int queueSize = queue.size();
+            if (queueSize > 0 || stats.getTotal() > 0 || stats.getSuccessful() > 0 || stats.getFailed() > 0) {
                 log.info("Queue-{} [{}] queueSize [{}] totalAdded [{}] totalSaved [{}] totalFailed [{}]", index,
-                        params.getLogName(), queue.size(), stats.getTotal(), stats.getSuccessful(), stats.getFailed());
+                        params.getLogName(), queueSize, stats.getTotal(), stats.getSuccessful(), stats.getFailed());
+                if (queueSize > params.getBatchSize()) {
+                    // More than a full batch is waiting, so writes are arriving faster than they drain. The queue
+                    // is unbounded, so this is the leading indicator of a storage stall - it shows up here well
+                    // before it shows up as heap pressure.
+                    log.warn("Queue-{} [{}] is falling behind: queueSize [{}] exceeds batchSize [{}]", index,
+                            params.getLogName(), queueSize, params.getBatchSize());
+                }
                 stats.reset();
             }
         }, params.getStatsPrintIntervalMs(), params.getStatsPrintIntervalMs(), TimeUnit.MILLISECONDS);

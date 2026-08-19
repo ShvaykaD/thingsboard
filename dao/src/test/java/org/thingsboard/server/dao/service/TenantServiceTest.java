@@ -78,6 +78,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.Set;
 import java.util.UUID;
 
@@ -602,7 +603,7 @@ public class TenantServiceTest extends AbstractServiceTest {
         Assert.assertEquals(0, pageDataCustomer.getTotalElements());
     }
 
-    private Rpc createRpcFor(Tenant tenant, Device device) {
+    private Rpc createRpcFor(Tenant tenant, Device device) throws Exception {
         // The create path is insert-if-absent and therefore needs the id up front - which is how it is used in
         // production: the device actor builds the Rpc with the rpcId the request already carries.
         Rpc rpc = new Rpc(new RpcId(UUID.randomUUID()));
@@ -611,7 +612,7 @@ public class TenantServiceTest extends AbstractServiceTest {
         rpc.setDeviceId(device.getId());
         rpc.setStatus(RpcStatus.QUEUED);
         rpc.setRequest(JacksonUtil.toJsonNode("{}"));
-        assertThat(rpcService.createIfAbsent(rpc)).isTrue();
+        assertThat(rpcService.createIfAbsentAsync(rpc).get(5, TimeUnit.SECONDS)).isTrue();
         return rpc;
     }
 

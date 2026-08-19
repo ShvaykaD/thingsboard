@@ -31,6 +31,8 @@ import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.common.data.rpc.ToDeviceRpcRequestBody;
 import org.thingsboard.server.common.msg.rpc.FromDeviceRpcResponse;
+import org.thingsboard.server.common.msg.rpc.RpcPersistResult;
+import org.thingsboard.server.common.msg.rpc.RpcPersistResultActorMsg;
 import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequest;
 import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequestActorMsg;
 import org.thingsboard.server.dao.device.DeviceService;
@@ -42,8 +44,11 @@ import org.thingsboard.server.service.rpc.TbCoreDeviceRpcService;
 import org.thingsboard.server.service.rpc.TbRpcService;
 import org.thingsboard.server.service.transport.TbCoreToTransportService;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -51,6 +56,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -116,7 +122,7 @@ public class DeviceActorMessageProcessorTest {
         processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
 
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
-        verify(rpcService).createIfAbsent(eq(tenantId), captor.capture());
+        verify(rpcService).createIfAbsent(eq(tenantId), captor.capture(), any());
         assertThat(captor.getValue().getRequestId()).isEqualTo(0); // first rpcSeq
     }
 
@@ -205,7 +211,7 @@ public class DeviceActorMessageProcessorTest {
                 new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
 
         ArgumentCaptor<Rpc> captor = ArgumentCaptor.forClass(Rpc.class);
-        verify(rpcService).createIfAbsent(eq(tenantId), captor.capture());
+        verify(rpcService).createIfAbsent(eq(tenantId), captor.capture(), any());
         assertThat(captor.getValue().getRequestId()).isEqualTo(6);
     }
 
@@ -301,12 +307,13 @@ public class DeviceActorMessageProcessorTest {
 
     @Test
     public void firstPersistedRpcRegistersAndSendsAsBefore() {
-        mockRpcInfra(); // createIfAbsent -> true
+        mockRpcInfra();
         UUID rpcId = UUID.randomUUID();
         subscribeAsyncSession();
 
         processor.processRpcRequest(mock(TbActorCtx.class),
                 new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
+        deliverPersistResult(rpcId, 0, RpcPersistResult.INSERTED);
 
         // The non-duplicate path must be untouched by the restructure: the command still reaches the device,
         // and the caller still gets its id back.
@@ -317,13 +324,15 @@ public class DeviceActorMessageProcessorTest {
     @Test
     public void duplicatePersistedRpcSkipsSendAndPendingRegistration() {
         mockRpcInfra();
-        given(rpcService.createIfAbsent(any(), any())).willReturn(false); // insert-if-absent matched an existing row
         UUID sessionId = subscribeAsyncSession(); // active subscription: a send WOULD happen if not skipped
+        UUID rpcId = UUID.randomUUID();
 
         processor.processRpcRequest(mock(TbActorCtx.class),
-                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
+        // Insert-if-absent matched an existing row.
+        deliverPersistResult(rpcId, 0, RpcPersistResult.DUPLICATE);
 
-        // Not sent while processing - the existing row owns delivery, re-sending would double-execute.
+        // Not sent - the existing row owns delivery, re-sending would double-execute.
         verify(toTransport, never()).process(any(), any());
         // ...and nothing was registered as pending, so a later push has nothing to deliver either.
         processor.sendPendingRequests(sessionId, "svc");
@@ -333,11 +342,11 @@ public class DeviceActorMessageProcessorTest {
     @Test
     public void duplicatePersistedRpcStillReturnsRpcIdToCaller() {
         mockRpcInfra();
-        given(rpcService.createIfAbsent(any(), any())).willReturn(false);
         UUID rpcId = UUID.randomUUID();
 
         processor.processRpcRequest(mock(TbActorCtx.class),
                 new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
+        deliverPersistResult(rpcId, 0, RpcPersistResult.DUPLICATE);
 
         // The caller still gets its id back: completion is keyed by rpcId and remove-once, so replying for a
         // duplicate is harmless - but NOT replying would hang the REST DeferredResult / rule-node callback.
@@ -346,17 +355,18 @@ public class DeviceActorMessageProcessorTest {
 
     @Test
     public void expiredOnArrivalRpcReturnsRpcIdToCaller() {
-        mockRpcInfra(); // create -> true: first delivery of a command that arrived past its expiration
+        mockRpcInfra(); // first delivery of a command that arrived past its expiration
         UUID rpcId = UUID.randomUUID();
         subscribeAsyncSession();
 
         processor.processRpcRequest(mock(TbActorCtx.class),
                 new ToDeviceRpcRequestActorMsg("svc", expiredRequest(rpcId)));
+        deliverPersistResult(rpcId, 0, RpcPersistResult.INSERTED);
 
         // The EXPIRED row is written AND the caller gets its id, so it can read that row instead of waiting
         // out the core's safety net for an opaque TIMEOUT. Never sent to the device - it is already expired.
         ArgumentCaptor<Rpc> rpcCaptor = ArgumentCaptor.forClass(Rpc.class);
-        verify(rpcService).createIfAbsent(eq(tenantId), rpcCaptor.capture());
+        verify(rpcService).createIfAbsent(eq(tenantId), rpcCaptor.capture(), any());
         assertThat(rpcCaptor.getValue().getStatus()).isEqualTo(RpcStatus.EXPIRED);
         verify(toTransport, never()).process(any(), any());
 
@@ -366,30 +376,227 @@ public class DeviceActorMessageProcessorTest {
     @Test
     public void duplicateExpiredOnArrivalRpcIsNoOpButStillReplies() {
         mockRpcInfra();
-        given(rpcService.createIfAbsent(any(), any())).willReturn(false); // row already exists from an earlier delivery
         UUID rpcId = UUID.randomUUID();
         subscribeAsyncSession();
 
         processor.processRpcRequest(mock(TbActorCtx.class),
                 new ToDeviceRpcRequestActorMsg("svc", expiredRequest(rpcId)));
+        // Row already exists from an earlier delivery.
+        deliverPersistResult(rpcId, 0, RpcPersistResult.DUPLICATE);
 
         // Insert-if-absent turns the EXPIRED create into a no-op, so an already-SUCCESSFUL row is not clobbered.
         // The reply is NOT gated on the insert result: it carries only the id, and completion is remove-once.
-        verify(rpcService).createIfAbsent(eq(tenantId), any());
+        verify(rpcService).createIfAbsent(eq(tenantId), any(), any());
         verify(toTransport, never()).process(any(), any());
         assertRpcIdReplied(rpcId);
     }
 
+    @Test
+    public void arrivalSendsNothingUntilThePersistResultArrives() {
+        mockRpcInfra();
+        subscribeAsyncSession();
+
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID())));
+
+        // Persist-before-send: nothing on the wire, and no rpcId returned, until the row is durable.
+        verify(toTransport, never()).process(any(), any());
+        verify(coreRpcService, never()).processRpcResponseFromDeviceActor(any());
+    }
+
+    @Test
+    public void unpersistedHeadBlocksTheSequentialQueueInsteadOfBeingSteppedOver() {
+        given(systemContext.getRpcSubmitStrategy()).willReturn("SEQUENTIAL_ON_ACK_FROM_DEVICE");
+        processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
+        mockRpcInfra();
+
+        // A arrived first but its row is not durable yet; B is durable. B must NOT be sent - it would reach the
+        // device ahead of A, reordering the commands the caller submitted.
+        registerEntry(0, false);
+        registerEntry(1, true);
+
+        pushViaAsyncSession();
+
+        verify(toTransport, never()).process(any(), any());
+    }
+
+    @Test
+    public void durableHeadIsSentAheadOfLaterEntries() {
+        given(systemContext.getRpcSubmitStrategy()).willReturn("SEQUENTIAL_ON_ACK_FROM_DEVICE");
+        processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
+        mockRpcInfra();
+
+        registerEntry(0, true);
+        registerEntry(1, true);
+
+        pushViaAsyncSession();
+
+        // Only the head goes out, and it is the first arrival.
+        assertThat(publishedRequestIds()).containsExactly(0);
+    }
+
+    @Test
+    public void sendingAPendingRpcMarksItSentSoATimeoutReportsTimeoutNotNoConnection() {
+        mockRpcInfra();
+        registerEntry(0, true);
+
+        pushViaAsyncSession();
+
+        assertThat(processor.toDeviceRpcPendingMap.get(0).isSent()).isTrue();
+    }
+
+    @Test
+    public void outOfOrderPersistResultsPreserveArrivalOrderOnAckStrategy() {
+        given(systemContext.getRpcSubmitStrategy()).willReturn("SEQUENTIAL_ON_ACK_FROM_DEVICE");
+        processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
+        mockRpcInfra();
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        subscribeAsyncSession();
+
+        UUID rpcA = UUID.randomUUID();
+        UUID rpcB = UUID.randomUUID();
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcA)));
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcB)));
+
+        // B's insert flushes first. B is durable but is NOT at the head, so nothing may go out yet.
+        deliverPersistResult(rpcB, 1, RpcPersistResult.INSERTED);
+        verify(toTransport, never()).process(any(), any());
+
+        // A becomes durable and, being the head, goes out first.
+        deliverPersistResult(rpcA, 0, RpcPersistResult.INSERTED);
+        assertThat(publishedRequestIds()).containsExactly(0);
+    }
+
+    @Test
+    public void outOfOrderPersistResultsPreserveArrivalOrderOnResponseStrategy() {
+        given(systemContext.getRpcSubmitStrategy()).willReturn("SEQUENTIAL_ON_RESPONSE_FROM_DEVICE");
+        processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
+        mockRpcInfra();
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        subscribeAsyncSession();
+
+        UUID rpcA = UUID.randomUUID();
+        UUID rpcB = UUID.randomUUID();
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcA)));
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcB)));
+
+        deliverPersistResult(rpcB, 1, RpcPersistResult.INSERTED);
+        verify(toTransport, never()).process(any(), any());
+
+        deliverPersistResult(rpcA, 0, RpcPersistResult.INSERTED);
+        assertThat(publishedRequestIds()).containsExactly(0);
+    }
+
+    @Test
+    public void burstSendsFromItsOwnContinuationWithoutResendingOtherEntries() {
+        mockRpcInfra(); // default strategy is BURST
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        subscribeAsyncSession();
+
+        UUID rpcA = UUID.randomUUID();
+        UUID rpcB = UUID.randomUUID();
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcA)));
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcB)));
+
+        deliverPersistResult(rpcA, 0, RpcPersistResult.INSERTED);
+        deliverPersistResult(rpcB, 1, RpcPersistResult.INSERTED);
+
+        // Each continuation sends exactly its own command. A must not be re-sent when B becomes durable.
+        assertThat(publishedRequestIds()).containsExactly(0, 1);
+    }
+
+    @Test
+    public void failedPersistSendsNothingRepliesNothingAndLeavesNoPendingEntry() {
+        mockRpcInfra();
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        subscribeAsyncSession();
+
+        UUID rpcId = UUID.randomUUID();
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
+        deliverPersistResult(rpcId, 0, RpcPersistResult.FAILED);
+
+        verify(toTransport, never()).process(any(), any());
+        verify(coreRpcService, never()).processRpcResponseFromDeviceActor(any());
+        assertThat(processor.toDeviceRpcPendingMap).isEmpty();
+    }
+
+    @Test
+    public void failedHeadDoesNotStallTheSequentialQueue() {
+        given(systemContext.getRpcSubmitStrategy()).willReturn("SEQUENTIAL_ON_ACK_FROM_DEVICE");
+        processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
+        mockRpcInfra();
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        subscribeAsyncSession();
+
+        UUID rpcA = UUID.randomUUID();
+        UUID rpcB = UUID.randomUUID();
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcA)));
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcB)));
+
+        // A held the head from arrival. Dropping it must advance the queue, or B waits out its own expiry.
+        deliverPersistResult(rpcA, 0, RpcPersistResult.FAILED);
+        deliverPersistResult(rpcB, 1, RpcPersistResult.INSERTED);
+
+        assertThat(publishedRequestIds()).containsExactly(1);
+    }
+
+    @Test
+    public void actorRestartBetweenTurnsStillSendsTheDurableRow() {
+        mockRpcInfra();
+        UUID rpcId = UUID.randomUUID();
+
+        // Turn 1 on the original actor: the create is enqueued, nothing is sent.
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
+        verify(toTransport, never()).process(any(), any());
+
+        // The actor is evicted before turn 2, so the self-tell is dropped. The row did become durable, so when
+        // the actor next starts init() reloads it and the command is delivered by the reload path instead.
+        processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
+        stubInFlight(inFlightRow(RpcStatus.QUEUED, 0, System.currentTimeMillis()));
+        processor.init(mock(TbActorCtx.class));
+
+        pushViaAsyncSession();
+
+        assertThat(publishedRequestIds()).containsExactly(0);
+    }
+
+    // Captures the persist continuations by requestId so tests can resolve them in any order - which is the
+    // whole point: batch flushes for different rpcIds complete in an order unrelated to arrival.
+    private final Map<Integer, Consumer<RpcPersistResult>> continuations = new LinkedHashMap<>();
+
     private void mockRpcInfra() {
         rpcService = mock(TbRpcService.class);
-        // Default: a brand-new command, so insert-if-absent reports a real insert. Duplicate tests override this.
-        given(rpcService.createIfAbsent(any(), any())).willReturn(true);
+        continuations.clear();
+        doAnswer(invocation -> {
+            Rpc rpc = invocation.getArgument(1);
+            continuations.put(rpc.getRequestId(), invocation.getArgument(2));
+            return null;
+        }).when(rpcService).createIfAbsent(any(), any(), any());
         given(systemContext.getTbRpcService()).willReturn(rpcService);
         coreRpcService = mock(TbCoreDeviceRpcService.class);
         given(systemContext.getTbCoreDeviceRpcService()).willReturn(coreRpcService);
         given(systemContext.getServiceId()).willReturn("svc");
         toTransport = mock(TbCoreToTransportService.class);
         given(systemContext.getTbCoreToTransportService()).willReturn(toTransport);
+    }
+
+    // Delivers turn 2 for one requestId, as the batch-flush callback would. Invoking the captured continuation
+    // first also asserts that turn 1 actually enqueued a create for this requestId.
+    private void deliverPersistResult(UUID rpcId, int requestId, RpcPersistResult result) {
+        continuations.get(requestId).accept(result);
+        processor.processRpcPersistResult(new RpcPersistResultActorMsg(rpcId, requestId, result));
+    }
+
+    // Registers a pending entry directly, so the head-of-line rule can be exercised without driving a full
+    // create round trip. persisted=false models a create still queued for its batch insert.
+    private void registerEntry(int requestId, boolean persisted) {
+        ToDeviceRpcRequestActorMsg actorMsg =
+                new ToDeviceRpcRequestActorMsg("svc", persistedRequest(UUID.randomUUID()));
+        ToDeviceRpcRequestMetadata md =
+                new ToDeviceRpcRequestMetadata(actorMsg, System.currentTimeMillis());
+        md.setPersisted(persisted);
+        processor.toDeviceRpcPendingMap.put(requestId, md);
     }
 
     // The reload issues a single findInFlightForReload query (DB-side filters out one-way DELIVERED and

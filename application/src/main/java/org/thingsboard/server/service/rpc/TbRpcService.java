@@ -33,6 +33,7 @@ import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.msg.TbMsgMetaData;
+import org.thingsboard.server.common.msg.rpc.RpcPersistResult;
 import org.thingsboard.server.dao.rpc.RpcService;
 import org.thingsboard.server.queue.util.TbCoreComponent;
 
@@ -40,6 +41,7 @@ import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 @TbCoreComponent
 @Service
@@ -49,11 +51,22 @@ public class TbRpcService {
     private final TbClusterService tbClusterService;
 
     private final ExecutorService[] callbackExecutors;
+    // Resumes device actors once their persistent create is durable. Deliberately NOT the callback stripes
+    // above: this runs on the command-delivery path, while those stripes carry full-request JSON serialization
+    // plus a rule-engine publish per notification. Sharing them would put rule engine publishing on the
+    // delivery path, so a queue stall or rule-engine backpressure would hold up device sends. Needs no rpcId
+    // striping - delivery order is fixed by the actor before the write is even enqueued, and there is exactly
+    // one continuation per rpcId - so a plain fixed pool is enough.
+    private final ExecutorService continuationExecutor;
 
     public TbRpcService(RpcService rpcService, TbClusterService tbClusterService,
-                        @Value("${sql.rpc.callback_threads:3}") int callbackThreads) {
+                        @Value("${sql.rpc.callback_threads:3}") int callbackThreads,
+                        @Value("${sql.rpc.continuation_threads:3}") int continuationThreads) {
         if (callbackThreads < 1) {
             throw new IllegalArgumentException("sql.rpc.callback_threads must be >= 1, but was " + callbackThreads);
+        }
+        if (continuationThreads < 1) {
+            throw new IllegalArgumentException("sql.rpc.continuation_threads must be >= 1, but was " + continuationThreads);
         }
         this.rpcService = rpcService;
         this.tbClusterService = tbClusterService;
@@ -62,6 +75,8 @@ public class TbRpcService {
             callbackExecutors[i] = Executors.newSingleThreadExecutor(
                     ThingsBoardThreadFactory.forName("rpc-persist-callback-" + i));
         }
+        this.continuationExecutor = Executors.newFixedThreadPool(continuationThreads,
+                ThingsBoardThreadFactory.forName("rpc-persist-continuation"));
     }
 
     @PreDestroy
@@ -69,14 +84,39 @@ public class TbRpcService {
         for (ExecutorService executor : callbackExecutors) {
             executor.shutdownNow();
         }
+        continuationExecutor.shutdownNow();
     }
 
-    public boolean createIfAbsent(TenantId tenantId, Rpc rpc) {
-        boolean inserted = rpcService.createIfAbsent(rpc);
-        if (inserted) {
-            executorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
-        }
-        return inserted;
+    /**
+     * Enqueues the create onto the batched write queue and resumes the caller once the row's fate is known.
+     * The continuation is invoked exactly once, on the continuation pool rather than on a notification stripe,
+     * because it is what releases the command for delivery to the device.
+     */
+    public void createIfAbsent(TenantId tenantId, Rpc rpc, Consumer<RpcPersistResult> continuation) {
+        DonAsynchron.withCallback(rpcService.createIfAbsentAsync(rpc),
+                inserted -> {
+                    RpcPersistResult result = Boolean.TRUE.equals(inserted)
+                            ? RpcPersistResult.INSERTED : RpcPersistResult.DUPLICATE;
+                    if (RpcPersistResult.INSERTED == result) {
+                        // Enqueue the notification on this rpcId's stripe BEFORE resuming the actor, so
+                        // RPC_QUEUED is queued ahead of any status notification the resumed actor goes on to
+                        // cause. Only the enqueue happens here; the push itself runs on the stripe, off this
+                        // path. Doing both steps in one callback keeps that order deterministic - registering
+                        // two separate future callbacks would rely on Guava listener ordering, which is not
+                        // specified.
+                        executorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
+                    } else {
+                        log.debug("[{}][{}][{}] Skipping RPC_QUEUED notification - a row for this RPC already existed",
+                                tenantId, rpc.getDeviceId(), rpc.getId());
+                    }
+                    continuation.accept(result);
+                },
+                t -> {
+                    log.error("[{}][{}][{}] Failed to persist RPC create with status [{}]",
+                            tenantId, rpc.getDeviceId(), rpc.getId(), rpc.getStatus(), t);
+                    continuation.accept(RpcPersistResult.FAILED);
+                },
+                continuationExecutor);
     }
 
     public void update(TenantId tenantId, Rpc rpc) {
