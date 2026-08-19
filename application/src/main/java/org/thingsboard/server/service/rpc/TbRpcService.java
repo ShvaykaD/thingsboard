@@ -50,47 +50,49 @@ public class TbRpcService {
     private final RpcService rpcService;
     private final TbClusterService tbClusterService;
 
-    private final ExecutorService[] callbackExecutors;
-    // Resumes device actors once their persistent create is durable. Deliberately NOT the callback stripes
-    // above: this runs on the command-delivery path, while those stripes carry full-request JSON serialization
-    // plus a rule-engine publish per notification. Sharing them would put rule engine publishing on the
-    // delivery path, so a queue stall or rule-engine backpressure would hold up device sends. Needs no rpcId
-    // striping - delivery order is fixed by the actor before the write is even enqueued, and there is exactly
-    // one continuation per rpcId - so a plain fixed pool is enough.
-    private final ExecutorService continuationExecutor;
+    // Post-persist callbacks that publish RPC lifecycle events to the rule engine. Striped by rpcId so a
+    // command's events keep their order (e.g. RPC_QUEUED before RPC_DELIVERED).
+    private final ExecutorService[] ruleEngineCallbackExecutors;
+    // Post-persist callbacks that resume the device actor once its create is durable, releasing the command for
+    // delivery. Deliberately a separate pool from the rule-engine stripes above: this one is on the delivery
+    // path, while those carry full-request JSON serialization plus a publish per event, so sharing them would
+    // let a queue stall or rule-engine backpressure hold up device sends. Needs no rpcId striping - delivery
+    // order is fixed by the actor before the write is even enqueued, and there is exactly one such callback per
+    // rpcId - so a plain fixed pool is enough.
+    private final ExecutorService deviceActorCallbackExecutor;
 
     public TbRpcService(RpcService rpcService, TbClusterService tbClusterService,
-                        @Value("${sql.rpc.callback_threads:3}") int callbackThreads,
-                        @Value("${sql.rpc.continuation_threads:3}") int continuationThreads) {
-        if (callbackThreads < 1) {
-            throw new IllegalArgumentException("sql.rpc.callback_threads must be >= 1, but was " + callbackThreads);
+                        @Value("${sql.rpc.rule_engine_callback_threads:3}") int ruleEngineCallbackThreads,
+                        @Value("${sql.rpc.device_actor_callback_threads:3}") int deviceActorCallbackThreads) {
+        if (ruleEngineCallbackThreads < 1) {
+            throw new IllegalArgumentException("sql.rpc.rule_engine_callback_threads must be >= 1, but was " + ruleEngineCallbackThreads);
         }
-        if (continuationThreads < 1) {
-            throw new IllegalArgumentException("sql.rpc.continuation_threads must be >= 1, but was " + continuationThreads);
+        if (deviceActorCallbackThreads < 1) {
+            throw new IllegalArgumentException("sql.rpc.device_actor_callback_threads must be >= 1, but was " + deviceActorCallbackThreads);
         }
         this.rpcService = rpcService;
         this.tbClusterService = tbClusterService;
-        this.callbackExecutors = new ExecutorService[callbackThreads];
-        for (int i = 0; i < callbackThreads; i++) {
-            callbackExecutors[i] = Executors.newSingleThreadExecutor(
-                    ThingsBoardThreadFactory.forName("rpc-persist-callback-" + i));
+        this.ruleEngineCallbackExecutors = new ExecutorService[ruleEngineCallbackThreads];
+        for (int i = 0; i < ruleEngineCallbackThreads; i++) {
+            ruleEngineCallbackExecutors[i] = Executors.newSingleThreadExecutor(
+                    ThingsBoardThreadFactory.forName("rpc-rule-engine-callback-" + i));
         }
-        this.continuationExecutor = Executors.newFixedThreadPool(continuationThreads,
-                ThingsBoardThreadFactory.forName("rpc-persist-continuation"));
+        this.deviceActorCallbackExecutor = Executors.newFixedThreadPool(deviceActorCallbackThreads,
+                ThingsBoardThreadFactory.forName("rpc-device-actor-callback"));
     }
 
     @PreDestroy
     private void destroy() {
-        for (ExecutorService executor : callbackExecutors) {
+        for (ExecutorService executor : ruleEngineCallbackExecutors) {
             executor.shutdownNow();
         }
-        continuationExecutor.shutdownNow();
+        deviceActorCallbackExecutor.shutdownNow();
     }
 
     /**
      * Enqueues the create onto the batched write queue and resumes the caller once the row's fate is known.
-     * The continuation is invoked exactly once, on the continuation pool rather than on a notification stripe,
-     * because it is what releases the command for delivery to the device.
+     * The continuation is invoked exactly once, on the device-actor callback pool rather than on a rule-engine
+     * stripe, because it is what releases the command for delivery to the device.
      */
     public void createIfAbsent(TenantId tenantId, Rpc rpc, Consumer<RpcPersistResult> continuation) {
         DonAsynchron.withCallback(rpcService.createIfAbsentAsync(rpc),
@@ -104,7 +106,7 @@ public class TbRpcService {
                         // path. Doing both steps in one callback keeps that order deterministic - registering
                         // two separate future callbacks would rely on Guava listener ordering, which is not
                         // specified.
-                        executorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
+                        ruleEngineCallbackExecutorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
                     } else {
                         log.debug("[{}][{}][{}] Skipping RPC_QUEUED notification - a row for this RPC already existed",
                                 tenantId, rpc.getDeviceId(), rpc.getId());
@@ -116,7 +118,7 @@ public class TbRpcService {
                             tenantId, rpc.getDeviceId(), rpc.getId(), rpc.getStatus(), t);
                     continuation.accept(RpcPersistResult.FAILED);
                 },
-                continuationExecutor);
+                deviceActorCallbackExecutor);
     }
 
     public void update(TenantId tenantId, Rpc rpc) {
@@ -135,11 +137,11 @@ public class TbRpcService {
                 },
                 t -> log.error("[{}][{}][{}] Failed to persist RPC with status [{}]",
                         tenantId, rpc.getDeviceId(), rpc.getId(), rpc.getStatus(), t),
-                executorFor(rpc.getUuidId()));
+                ruleEngineCallbackExecutorFor(rpc.getUuidId()));
     }
 
-    private Executor executorFor(UUID rpcId) {
-        return callbackExecutors[HashPartitioner.resolvePartition(rpcId.hashCode(), callbackExecutors.length)];
+    private Executor ruleEngineCallbackExecutorFor(UUID rpcId) {
+        return ruleEngineCallbackExecutors[HashPartitioner.resolvePartition(rpcId.hashCode(), ruleEngineCallbackExecutors.length)];
     }
 
     private void notifyRuleEngine(TenantId tenantId, Rpc rpc) {
