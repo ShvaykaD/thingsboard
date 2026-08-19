@@ -35,6 +35,14 @@ public interface RpcService extends EntityDaoService {
      */
     boolean createIfAbsent(Rpc rpc);
 
+    /**
+     * Batched, non-blocking insert-if-absent. Same semantics as {@link #createIfAbsent(Rpc)}, but the row is
+     * written by the shared rpcId-striped batch queue instead of by the calling thread.
+     *
+     * @return a future resolving to true if a row was inserted, false if a row with this id already existed
+     */
+    ListenableFuture<Boolean> createIfAbsentAsync(Rpc rpc);
+
     ListenableFuture<Boolean> updateAsync(Rpc rpc);
 
     void deleteRpc(TenantId tenantId, RpcId id);

@@ -33,6 +33,8 @@ public interface RpcDao extends Dao<Rpc> {
      */
     boolean createIfAbsent(Rpc rpc);
 
+    ListenableFuture<Boolean> createIfAbsentAsync(Rpc rpc);
+
     ListenableFuture<Boolean> updateAsync(Rpc rpc);
 
     PageData<Rpc> findAllByDeviceId(TenantId tenantId, DeviceId deviceId, PageLink pageLink);

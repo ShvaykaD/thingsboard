@@ -43,7 +43,10 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     JpaRpcDao rpcDao;
 
     @Autowired
-    RpcUpdateRepository rpcUpdateRepository;
+    RpcInsertRepository rpcInsertRepository;
+
+    @Autowired
+    RpcWriteRepository rpcWriteRepository;
 
     @Autowired
     JdbcTemplate jdbcTemplate;
@@ -114,12 +117,12 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         //   index 0: update A (SUCCESSFUL, {ok:true}) -> UPDATE hits the existing row  -> true
         //   index 1: update B (SUCCESSFUL, {x:1})     -> UPDATE for a missing row      -> false
         //   index 2: update A (EXPIRED) -> guard blocks overwrite of terminal SUCCESSFUL -> false
-        List<RpcEntity> batch = List.of(
-                new RpcEntity(rpc(idA, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}"))),
-                new RpcEntity(rpc(idB, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"x\":1}"))),
-                new RpcEntity(rpc(idA, deviceId, RpcStatus.EXPIRED, null)));
+        List<RpcWrite> batch = List.of(
+                RpcWrite.update(new RpcEntity(rpc(idA, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}")))),
+                RpcWrite.update(new RpcEntity(rpc(idB, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"x\":1}")))),
+                RpcWrite.update(new RpcEntity(rpc(idA, deviceId, RpcStatus.EXPIRED, null))));
 
-        List<Boolean> persisted = rpcUpdateRepository.update(batch);
+        List<Boolean> persisted = rpcWriteRepository.write(batch);
 
         // Booleans align positionally to submission order:
         //   index 0: A QUEUED -> SUCCESSFUL      -> allowed          -> true
@@ -393,4 +396,105 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         return rpc;
     }
 
+    @Test
+    public void batchInsertIfAbsentReportsPerRowWhetherItInserted() {
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        UUID idA = UUID.randomUUID();
+        UUID idB = UUID.randomUUID();
+
+        // A already exists; the batch then offers A again plus a brand-new B.
+        rpcDao.createIfAbsent(rpc(idA, deviceId, RpcStatus.QUEUED, null));
+
+        int[] counts = rpcInsertRepository.insertIfAbsent(List.of(
+                new RpcEntity(rpc(idA, deviceId, RpcStatus.QUEUED, null)),
+                new RpcEntity(rpc(idB, deviceId, RpcStatus.QUEUED, null))));
+
+        // Positional, like the update batch: index 0 conflicted, index 1 inserted.
+        assertThat(counts).hasSize(2);
+        assertThat(counts[0]).isZero();
+        assertThat(counts[1]).isPositive();
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, idB)).isNotNull();
+    }
+
+    @Test
+    public void batchInsertIfAbsentTreatsADuplicateInsideOneBatchAsAConflict() {
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        UUID id = UUID.randomUUID();
+
+        // Same rpcId twice in one batch - a redelivered command coalesced into a single flush. The second
+        // statement must conflict against the first rather than raising a constraint violation.
+        int[] counts = rpcInsertRepository.insertIfAbsent(List.of(
+                new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null)),
+                new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null))));
+
+        assertThat(counts[0]).isPositive();
+        assertThat(counts[1]).isZero();
+    }
+
+    @Test
+    public void oneBatchAppliesTheInsertBeforeAnUpdateForTheSameRpcId() {
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        UUID id = UUID.randomUUID();
+
+        // Create and status update for the SAME rpcId coalesced into one flush, submitted update-first to prove
+        // the ordering comes from the operation tag and not from position in the list. If the update were
+        // applied first it would match no row and report false, stranding a QUEUED row.
+        List<Boolean> results = rpcWriteRepository.write(List.of(
+                RpcWrite.update(new RpcEntity(rpc(id, deviceId, RpcStatus.DELIVERED, null))),
+                RpcWrite.insert(new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null)))));
+
+        // Results stay positionally aligned to the submitted list, not to the execution order.
+        assertThat(results).containsExactly(true, true);
+
+        Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
+        assertThat(stored).isNotNull();
+        assertThat(stored.getStatus()).isEqualTo(RpcStatus.DELIVERED);
+    }
+
+    @Test
+    public void batchOfOnlyInsertsAndBatchOfOnlyUpdatesBothApply() {
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        UUID id = UUID.randomUUID();
+
+        // Guards the empty-partition branches: a homogeneous batch must not index into an empty result array.
+        assertThat(rpcWriteRepository.write(List.of(
+                RpcWrite.insert(new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null))))))
+                .containsExactly(true);
+
+        assertThat(rpcWriteRepository.write(List.of(
+                RpcWrite.update(new RpcEntity(rpc(id, deviceId, RpcStatus.SENT, null))))))
+                .containsExactly(true);
+    }
+
+    @Test
+    public void createIfAbsentAsyncInsertsThenReportsADuplicateOnTheSecondCall() throws Exception {
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        UUID id = UUID.randomUUID();
+
+        // First create goes through the batched queue and inserts.
+        assertThat(rpcDao.createIfAbsentAsync(rpc(id, deviceId, RpcStatus.QUEUED, null))
+                .get(5, TimeUnit.SECONDS)).isTrue();
+
+        // A redelivered command must be reported as a duplicate, never as a fresh insert - the actor uses this
+        // to decide not to execute the command on the device a second time.
+        assertThat(rpcDao.createIfAbsentAsync(rpc(id, deviceId, RpcStatus.QUEUED, null))
+                .get(5, TimeUnit.SECONDS)).isFalse();
+
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id)).isNotNull();
+    }
+
+    @Test
+    public void createAndUpdateForTheSameRpcIdResolveInOrderThroughTheSharedQueue() throws Exception {
+        DeviceId deviceId = new DeviceId(UUID.randomUUID());
+        UUID id = UUID.randomUUID();
+
+        // Both writes land on the same rpcId stripe, so the update cannot be applied before the insert even
+        // when the two are coalesced into a single flush.
+        var created = rpcDao.createIfAbsentAsync(rpc(id, deviceId, RpcStatus.QUEUED, null));
+        var updated = rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.DELIVERED, null));
+
+        assertThat(created.get(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(updated.get(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id).getStatus()).isEqualTo(RpcStatus.DELIVERED);
+    }
 }

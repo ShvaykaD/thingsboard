@@ -19,14 +19,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.rpc.RpcStatus;
 import org.thingsboard.server.dao.model.sql.RpcEntity;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -53,31 +51,26 @@ public class RpcUpdateRepository {
     }
 
     private final JdbcTemplate jdbcTemplate;
-    private final TransactionTemplate transactionTemplate;
 
-    List<Boolean> update(List<RpcEntity> updates) {
-        return transactionTemplate.execute(status -> {
-            int[] updateCounts = jdbcTemplate.batchUpdate(UPDATE, new BatchPreparedStatementSetter() {
-                @Override
-                public void setValues(PreparedStatement ps, int i) throws SQLException {
-                    RpcEntity rpc = updates.get(i);
-                    ps.setString(1, rpc.getStatus().name());
-                    ps.setString(2, JacksonUtil.toString(rpc.getResponse()));
-                    ps.setObject(3, rpc.getUuid());
-                    ps.setArray(4, ps.getConnection().createArrayOf("varchar", allowedFromArray(rpc)));
-                }
-
-                @Override
-                public int getBatchSize() {
-                    return updates.size();
-                }
-            });
-
-            List<Boolean> persisted = new ArrayList<>(updateCounts.length);
-            for (int updateCount : updateCounts) {
-                persisted.add(updateCount > 0);
+    /**
+     * Batch status update. Deliberately has no transaction of its own: {@link RpcWriteRepository} owns the
+     * transaction so that inserts and updates in one batch apply in the right order.
+     */
+    int[] update(List<RpcEntity> updates) {
+        return jdbcTemplate.batchUpdate(UPDATE, new BatchPreparedStatementSetter() {
+            @Override
+            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                RpcEntity rpc = updates.get(i);
+                ps.setString(1, rpc.getStatus().name());
+                ps.setString(2, JacksonUtil.toString(rpc.getResponse()));
+                ps.setObject(3, rpc.getUuid());
+                ps.setArray(4, ps.getConnection().createArrayOf("varchar", allowedFromArray(rpc)));
             }
-            return persisted;
+
+            @Override
+            public int getBatchSize() {
+                return updates.size();
+            }
         });
     }
 
