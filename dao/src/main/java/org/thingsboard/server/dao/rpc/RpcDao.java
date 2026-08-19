@@ -31,8 +31,6 @@ public interface RpcDao extends Dao<Rpc> {
      *
      * @return true if a row was inserted, false if a row with this id already existed
      */
-    boolean createIfAbsent(Rpc rpc);
-
     ListenableFuture<Boolean> createIfAbsentAsync(Rpc rpc);
 
     ListenableFuture<Boolean> updateAsync(Rpc rpc);

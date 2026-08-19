@@ -260,7 +260,7 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
         }
         if (RpcPersistResult.FAILED == result) {
             // No durable row, so the command must not be sent and the caller must not be given an rpcId to
-            // read. It times out via DefaultTbCoreDeviceRpcService, matching the synchronous-create behaviour.
+            // read. It times out via DefaultTbCoreDeviceRpcService, as it did when the create was blocking.
             log.debug("[{}][{}][{}] RPC create did not persist - skipping device send", deviceId, rpcId, requestId);
             releasePendingRpc(rpcId, requestId, "RPC create failed to persist!");
             return;

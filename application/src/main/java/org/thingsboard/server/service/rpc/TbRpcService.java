@@ -119,18 +119,6 @@ public class TbRpcService {
                 continuationExecutor);
     }
 
-    /**
-     * Synchronous create, retained so reverting to the blocking persist-before-send behaviour is a one-method
-     * change in the device actor. Not used by the actor's request path.
-     */
-    public boolean createIfAbsent(TenantId tenantId, Rpc rpc) {
-        boolean inserted = rpcService.createIfAbsent(rpc);
-        if (inserted) {
-            executorFor(rpc.getUuidId()).execute(() -> notifyRuleEngine(tenantId, rpc));
-        }
-        return inserted;
-    }
-
     public void update(TenantId tenantId, Rpc rpc) {
         persist(tenantId, rpc, rpcService.updateAsync(rpc));
     }

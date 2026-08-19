@@ -49,13 +49,6 @@ public class BaseRpcService implements RpcService {
     private final RpcDao rpcDao;
 
     @Override
-    public boolean createIfAbsent(Rpc rpc) {
-        log.trace("Executing createIfAbsent, tenantId [{}], deviceId [{}], rpcId [{}], status [{}]",
-                rpc.getTenantId(), rpc.getDeviceId(), rpc.getId(), rpc.getStatus());
-        return rpcDao.createIfAbsent(rpc);
-    }
-
-    @Override
     public ListenableFuture<Boolean> createIfAbsentAsync(Rpc rpc) {
         log.trace("Executing createIfAbsentAsync, tenantId [{}], deviceId [{}], rpcId [{}], status [{}]",
                 rpc.getTenantId(), rpc.getDeviceId(), rpc.getId(), rpc.getStatus());

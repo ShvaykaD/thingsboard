@@ -43,9 +43,6 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     JpaRpcDao rpcDao;
 
     @Autowired
-    RpcInsertRepository rpcInsertRepository;
-
-    @Autowired
     RpcWriteRepository rpcWriteRepository;
 
     @Autowired
@@ -62,7 +59,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
-    public void deleteOutdated() {
+    public void deleteOutdated() throws Exception {
         // Dedicated tenants, NOT SYS_TENANT_ID: the Long.MAX_VALUE case deletes every row of the tenant it is
         // given, and this class has no per-test rollback, so sharing a tenant with the other tests would make
         // the exact counts below depend on JUnit's method ordering.
@@ -70,9 +67,9 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         TenantId otherTenantId = TenantId.fromUUID(UUID.randomUUID());
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
 
-        rpcDao.createIfAbsent(rpc(tenantId, UUID.randomUUID(), deviceId, RpcStatus.QUEUED, null));
-        rpcDao.createIfAbsent(rpc(tenantId, UUID.randomUUID(), deviceId, RpcStatus.QUEUED, null));
-        rpcDao.createIfAbsent(rpc(otherTenantId, UUID.randomUUID(), new DeviceId(UUID.randomUUID()), RpcStatus.QUEUED, null));
+        create(rpc(tenantId, UUID.randomUUID(), deviceId, RpcStatus.QUEUED, null));
+        create(rpc(tenantId, UUID.randomUUID(), deviceId, RpcStatus.QUEUED, null));
+        create(rpc(otherTenantId, UUID.randomUUID(), new DeviceId(UUID.randomUUID()), RpcStatus.QUEUED, null));
 
         int batchSize = 10_000;
         assertThat(rpcDao.deleteOutdatedRpcByTenantIdBatch(tenantId, 0L, batchSize)).isEqualTo(0);
@@ -85,8 +82,8 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
 
-        // Production create path: the QUEUED row is persisted synchronously (persist-before-send).
-        rpcDao.createIfAbsent(rpc(id, deviceId, RpcStatus.QUEUED, null));
+        // Production create path: the QUEUED row is durable before the command is sent to the device.
+        create(rpc(id, deviceId, RpcStatus.QUEUED, null));
 
         Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
         assertThat(stored).isNotNull();
@@ -103,13 +100,13 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
-    public void updateBatchAppliesInOrderAndAlignsResults() {
+    public void updateBatchAppliesInOrderAndAlignsResults() throws Exception {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         UUID idA = UUID.randomUUID();
         UUID idB = UUID.randomUUID(); // never created -> its update must report no match
 
-        // Row A exists (persisted synchronously at create time); B was never created.
-        rpcDao.createIfAbsent(rpc(idA, deviceId, RpcStatus.QUEUED, null));
+        // Row A exists (its create already flushed); B was never created.
+        create(rpc(idA, deviceId, RpcStatus.QUEUED, null));
 
         // Drive the persist logic directly with a single, deterministically-coalesced update batch.
         // This is exactly what "coalescing" means: one update() call carrying several writes for the
@@ -145,7 +142,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
 
         // Initial create.
-        rpcDao.createIfAbsent(rpc(id, deviceId, RpcStatus.QUEUED, null));
+        create(rpc(id, deviceId, RpcStatus.QUEUED, null));
 
         // Delivery timeout with closeTransportSessionOnRpcDeliveryTimeout=true re-queues the RPC: the
         // device actor persists status=QUEUED again as a status update so init() can re-pick it up.
@@ -162,7 +159,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
 
-        rpcDao.createIfAbsent(rpc(id, deviceId, RpcStatus.QUEUED, null));
+        create(rpc(id, deviceId, RpcStatus.QUEUED, null));
 
         // A real device response reaches SUCCESSFUL with a response body.
         assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}")))
@@ -182,7 +179,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         Rpc created = rpc(id, deviceId, RpcStatus.DELIVERED, null);
         created.setOneway(true);
-        rpcDao.createIfAbsent(created);
+        create(created);
 
         // One-way DELIVERED is terminal. A one-way write carries oneway=true (as the actor sets from the request),
         // so its allowed-from set excludes DELIVERED and the guard blocks the overwrite.
@@ -198,7 +195,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         Rpc created = rpc(id, deviceId, RpcStatus.DELIVERED, null);
         created.setOneway(false);
-        rpcDao.createIfAbsent(created);
+        create(created);
 
         // Two-way DELIVERED is in-flight (awaiting response), so a genuine timeout may expire it.
         Rpc expired = rpc(id, deviceId, RpcStatus.EXPIRED, null);
@@ -211,7 +208,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     public void guardAllowsSuccessfulFromSent() throws Exception {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
-        rpcDao.createIfAbsent(rpc(id, deviceId, RpcStatus.SENT, null));
+        create(rpc(id, deviceId, RpcStatus.SENT, null));
 
         // Response for an as-yet-undelivered RPC (no PUBACK) lands while status is still SENT.
         assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"v\":1}")))
@@ -227,7 +224,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         Rpc created = rpc(id, deviceId, RpcStatus.DELIVERED, null);
         created.setOneway(false);
-        rpcDao.createIfAbsent(created);
+        create(created);
 
         // A stale/duplicate SENT must not roll DELIVERED backwards.
         assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SENT, null)).get(5, TimeUnit.SECONDS)).isFalse();
@@ -239,7 +236,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
 
-        rpcDao.createIfAbsent(rpc(id, deviceId, RpcStatus.QUEUED, null));
+        create(rpc(id, deviceId, RpcStatus.QUEUED, null));
 
         // RPC is removed (TTL cleanup / manual delete) while a response is still in flight.
         rpcDao.removeById(TenantId.SYS_TENANT_ID, id);
@@ -254,7 +251,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
-    public void createIfAbsentInsertsWhenRowMissing() {
+    public void createIfAbsentInsertsWhenRowMissing() throws Exception {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         Rpc toCreate = rpc(id, deviceId, RpcStatus.QUEUED, null);
@@ -262,7 +259,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         toCreate.setOneway(true);
         toCreate.setAdditionalInfo(JacksonUtil.toJsonNode("{\"src\":\"test\"}"));
 
-        assertThat(rpcDao.createIfAbsent(toCreate)).isTrue();
+        assertThat(create(toCreate)).isTrue();
 
         // Every column the native INSERT binds must round-trip - a missed column would silently write NULL.
         Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
@@ -296,19 +293,19 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
-    public void createIfAbsentIsNoOpWhenRowExists() {
+    public void createIfAbsentIsNoOpWhenRowExists() throws Exception {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         Rpc original = rpc(id, deviceId, RpcStatus.QUEUED, null);
         original.setRequestId(1);
-        assertThat(rpcDao.createIfAbsent(original)).isTrue();
+        assertThat(create(original)).isTrue();
 
         // A re-delivered command carries the SAME rpcId but a fresh rpcSeq and a later createdTime.
         // The old JPA merge overwrote both; insert-if-absent must change nothing at all.
         Rpc duplicate = rpc(id, deviceId, RpcStatus.QUEUED, null);
         duplicate.setRequestId(99);
         duplicate.setCreatedTime(original.getCreatedTime() + 5_000);
-        assertThat(rpcDao.createIfAbsent(duplicate)).isFalse();
+        assertThat(create(duplicate)).isFalse();
 
         Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
         assertThat(stored.getRequestId()).isEqualTo(1);
@@ -320,7 +317,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     public void createIfAbsentDoesNotResurrectTerminalRow() throws Exception {
         UUID id = UUID.randomUUID();
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
-        assertThat(rpcDao.createIfAbsent(rpc(id, deviceId, RpcStatus.QUEUED, null))).isTrue();
+        assertThat(create(rpc(id, deviceId, RpcStatus.QUEUED, null))).isTrue();
 
         // The two write paths compose: insert-if-absent creates, the guarded UPDATE completes.
         assertThat(rpcDao.updateAsync(rpc(id, deviceId, RpcStatus.SUCCESSFUL, JacksonUtil.toJsonNode("{\"ok\":true}")))
@@ -328,7 +325,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
 
         // The reported bug: a re-delivered create used to merge the finished row back to QUEUED with a new
         // requestId, producing a second in-flight attempt against one row.
-        assertThat(rpcDao.createIfAbsent(rpc(id, deviceId, RpcStatus.QUEUED, null))).isFalse();
+        assertThat(create(rpc(id, deviceId, RpcStatus.QUEUED, null))).isFalse();
 
         Rpc stored = rpcDao.findById(TenantId.SYS_TENANT_ID, id);
         assertThat(stored.getStatus()).isEqualTo(RpcStatus.SUCCESSFUL);
@@ -336,7 +333,7 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
-    public void findInFlightForReloadExcludesOneWayDeliveredAndTerminal() {
+    public void findInFlightForReloadExcludesOneWayDeliveredAndTerminal() throws Exception {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         UUID q = seedRpc(deviceId, RpcStatus.QUEUED, false);
         UUID s = seedRpc(deviceId, RpcStatus.SENT, true);          // one-way SENT still reloaded (retry)
@@ -370,14 +367,20 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         assertThat(stored.getResponse()).isEqualTo(JacksonUtil.toJsonNode("{\"ok\":true}"));
     }
 
-    private UUID seedRpc(DeviceId deviceId, RpcStatus status, boolean oneway) {
+    private UUID seedRpc(DeviceId deviceId, RpcStatus status, boolean oneway) throws Exception {
         UUID id = UUID.randomUUID();
         Rpc toCreate = rpc(id, deviceId, status, null);
         toCreate.setOneway(oneway);
         toCreate.setRequestId(null);
         toCreate.setExpirationTime(System.currentTimeMillis() + 60_000);
-        rpcDao.createIfAbsent(toCreate);
+        create(toCreate);
         return id;
+    }
+
+    // Seeds a row through the batched create and waits for its flush, so a test can rely on the row existing
+    // before it asserts on anything that reads it.
+    private boolean create(Rpc rpc) throws Exception {
+        return rpcDao.createIfAbsentAsync(rpc).get(5, TimeUnit.SECONDS);
     }
 
     private Rpc rpc(UUID id, DeviceId deviceId, RpcStatus status, JsonNode response) {
@@ -397,38 +400,35 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
-    public void batchInsertIfAbsentReportsPerRowWhetherItInserted() {
+    public void oneBatchReportsPerRowWhetherEachInsertApplied() throws Exception {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         UUID idA = UUID.randomUUID();
         UUID idB = UUID.randomUUID();
 
         // A already exists; the batch then offers A again plus a brand-new B.
-        rpcDao.createIfAbsent(rpc(idA, deviceId, RpcStatus.QUEUED, null));
+        create(rpc(idA, deviceId, RpcStatus.QUEUED, null));
 
-        int[] counts = rpcInsertRepository.insertIfAbsent(List.of(
-                new RpcEntity(rpc(idA, deviceId, RpcStatus.QUEUED, null)),
-                new RpcEntity(rpc(idB, deviceId, RpcStatus.QUEUED, null))));
+        List<Boolean> results = rpcWriteRepository.write(List.of(
+                RpcWrite.insert(new RpcEntity(rpc(idA, deviceId, RpcStatus.QUEUED, null))),
+                RpcWrite.insert(new RpcEntity(rpc(idB, deviceId, RpcStatus.QUEUED, null)))));
 
-        // Positional, like the update batch: index 0 conflicted, index 1 inserted.
-        assertThat(counts).hasSize(2);
-        assertThat(counts[0]).isZero();
-        assertThat(counts[1]).isPositive();
+        // Positional, like the update rows: index 0 conflicted, index 1 inserted. Reporting a conflicted insert
+        // as true is how a redelivered command would be mistaken for a fresh create and sent to the device twice.
+        assertThat(results).containsExactly(false, true);
         assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, idB)).isNotNull();
     }
 
     @Test
-    public void batchInsertIfAbsentTreatsADuplicateInsideOneBatchAsAConflict() {
+    public void oneBatchTreatsADuplicateRpcIdInsideItAsAConflict() {
         DeviceId deviceId = new DeviceId(UUID.randomUUID());
         UUID id = UUID.randomUUID();
 
         // Same rpcId twice in one batch - a redelivered command coalesced into a single flush. The second
         // statement must conflict against the first rather than raising a constraint violation.
-        int[] counts = rpcInsertRepository.insertIfAbsent(List.of(
-                new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null)),
-                new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null))));
-
-        assertThat(counts[0]).isPositive();
-        assertThat(counts[1]).isZero();
+        assertThat(rpcWriteRepository.write(List.of(
+                RpcWrite.insert(new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null))),
+                RpcWrite.insert(new RpcEntity(rpc(id, deviceId, RpcStatus.QUEUED, null))))))
+                .containsExactly(true, false);
     }
 
     @Test
@@ -464,23 +464,6 @@ public class JpaRpcDaoTest extends AbstractJpaDaoTest {
         assertThat(rpcWriteRepository.write(List.of(
                 RpcWrite.update(new RpcEntity(rpc(id, deviceId, RpcStatus.SENT, null))))))
                 .containsExactly(true);
-    }
-
-    @Test
-    public void createIfAbsentAsyncInsertsThenReportsADuplicateOnTheSecondCall() throws Exception {
-        DeviceId deviceId = new DeviceId(UUID.randomUUID());
-        UUID id = UUID.randomUUID();
-
-        // First create goes through the batched queue and inserts.
-        assertThat(rpcDao.createIfAbsentAsync(rpc(id, deviceId, RpcStatus.QUEUED, null))
-                .get(5, TimeUnit.SECONDS)).isTrue();
-
-        // A redelivered command must be reported as a duplicate, never as a fresh insert - the actor uses this
-        // to decide not to execute the command on the device a second time.
-        assertThat(rpcDao.createIfAbsentAsync(rpc(id, deviceId, RpcStatus.QUEUED, null))
-                .get(5, TimeUnit.SECONDS)).isFalse();
-
-        assertThat(rpcDao.findById(TenantId.SYS_TENANT_ID, id)).isNotNull();
     }
 
     @Test
