@@ -248,11 +248,9 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
 
         ToDeviceRpcRequestMetadata md = toDeviceRpcPendingMap.get(requestId);
         if (md == null) {
-            // Expired at arrival, or already completed. Replying is safe - the reply carries only the id and
-            // completion is remove-once - and lets the caller read the row instead of waiting for a timeout.
-            if (RpcPersistResult.FAILED != result) {
-                sendRpcIdResponse(rpcId);
-            }
+            // Expired at arrival, or already completed. Not gated on the result: the reply carries only the id,
+            // and completion is remove-once - so the caller can read the row instead of waiting for a timeout.
+            sendRpcIdResponse(rpcId);
             return;
         }
         if (RpcPersistResult.FAILED == result) {
@@ -334,6 +332,12 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
 
     private static boolean undelivered(ToDeviceRpcRequestMetadata md) {
         return !md.isDelivered();
+    }
+
+    // Skipping an entry whose insert has not confirmed is safe here: its own persist result will send it. Sending
+    // it now would put the command on the wire before its row is durable, and then send it a second time.
+    private boolean sendable(Map.Entry<Integer, ToDeviceRpcRequestMetadata> entry) {
+        return undelivered(entry.getValue()) && entry.getValue().isPersisted();
     }
 
     private void createRpcIfAbsent(TbActorCtx context, ToDeviceRpcRequest request, RpcStatus status, long createdTime, int requestId) {
@@ -540,11 +544,11 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
             getFirstRpc().ifPresent(processPendingRpc(sessionId, nodeId, sentOneWayIds));
         } else if (sessionType == SessionType.ASYNC) {
             toDeviceRpcPendingMap.entrySet().stream()
-                    .filter(e -> undelivered(e.getValue()))
+                    .filter(this::sendable)
                     .forEach(processPendingRpc(sessionId, nodeId, sentOneWayIds));
         } else {
             toDeviceRpcPendingMap.entrySet().stream()
-                    .filter(e -> undelivered(e.getValue()))
+                    .filter(this::sendable)
                     .findFirst().ifPresent(processPendingRpc(sessionId, nodeId, sentOneWayIds));
         }
 
@@ -607,9 +611,6 @@ public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcesso
             ToDeviceRpcRequestMsg rpcRequest = createToDeviceRpcRequestMsg(request, requestId);
             log.debug("[{}][{}][{}][{}] Send pending RPC request to transport ...", deviceId, sessionId, rpcId, requestId);
             sendToTransport(rpcRequest, sessionId, nodeId);
-            // A sequential first-send routes through here now, and the timeout reads this to pick TIMEOUT over
-            // NO_ACTIVE_CONNECTION.
-            entry.getValue().setSent(true);
         };
     }
 

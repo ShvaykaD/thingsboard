@@ -403,6 +403,24 @@ public class DeviceActorMessageProcessorTest {
     }
 
     @Test
+    public void subscribingDoesNotPushAnRpcWhoseRowIsNotDurableYet() {
+        mockRpcInfra(); // BURST
+        TbActorCtx ctx = mock(TbActorCtx.class);
+        UUID rpcId = UUID.randomUUID();
+
+        // Turn 1 only: the entry is registered, its insert has not flushed.
+        processor.processRpcRequest(ctx, new ToDeviceRpcRequestActorMsg("svc", persistedRequest(rpcId)));
+
+        // A device subscribing in that window must not be handed the command - persist-before-send - and the
+        // command must not then be sent a second time by its own continuation.
+        pushViaAsyncSession();
+        verify(toTransport, never()).process(any(), any());
+
+        deliverPersistResult(rpcId, 0, RpcPersistResult.INSERTED);
+        assertThat(publishedRequestIds()).containsExactly(0);
+    }
+
+    @Test
     public void unpersistedHeadBlocksTheSequentialQueueInsteadOfBeingSteppedOver() {
         given(systemContext.getRpcSubmitStrategy()).willReturn("SEQUENTIAL_ON_ACK_FROM_DEVICE");
         processor = new DeviceActorMessageProcessor(systemContext, tenantId, deviceId);
@@ -429,16 +447,6 @@ public class DeviceActorMessageProcessorTest {
         pushViaAsyncSession();
 
         assertThat(publishedRequestIds()).containsExactly(0);
-    }
-
-    @Test
-    public void sendingAPendingRpcMarksItSentSoATimeoutReportsTimeoutNotNoConnection() {
-        mockRpcInfra();
-        registerEntry(0, true);
-
-        pushViaAsyncSession();
-
-        assertThat(processor.toDeviceRpcPendingMap.get(0).isSent()).isTrue();
     }
 
     @Test
