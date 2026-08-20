@@ -115,6 +115,78 @@ public class DeviceActorMessageProcessorTest {
     }
 
     @Test
+    public void nonPersistentRpcIsSentInTheArrivalTurnWithoutTouchingTheDatabase() {
+        mockRpcInfra();
+        subscribeAsyncSession();
+
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", nonPersistedRequest(UUID.randomUUID())));
+
+        // Straight out in the arrival turn: no create enqueued, no persist result involved.
+        assertThat(publishedRequestIds()).containsExactly(0);
+        verify(rpcService, never()).createIfAbsent(any(), any(), any());
+        verify(rpcService, never()).update(any(), any());
+    }
+
+    @Test
+    public void nonPersistentOneWayRpcCompletesAsSoonAsItIsSent() {
+        mockRpcInfra();
+        subscribeAsyncSession();
+        UUID rpcId = UUID.randomUUID();
+
+        processor.processRpcRequest(mock(TbActorCtx.class), new ToDeviceRpcRequestActorMsg("svc",
+                nonPersistedRequest(rpcId, System.currentTimeMillis() + 60_000, true)));
+
+        assertThat(publishedRequestIds()).containsExactly(0);
+        ArgumentCaptor<FromDeviceRpcResponse> captor = ArgumentCaptor.forClass(FromDeviceRpcResponse.class);
+        verify(coreRpcService).processRpcResponseFromDeviceActor(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(rpcId);
+        assertThat(processor.toDeviceRpcPendingMap).isEmpty();
+    }
+
+    @Test
+    public void nonPersistentTwoWayRpcStaysPendingAfterItIsSent() {
+        mockRpcInfra();
+        subscribeAsyncSession();
+
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", nonPersistedRequest(UUID.randomUUID())));
+
+        assertThat(publishedRequestIds()).containsExactly(0);
+        assertThat(processor.toDeviceRpcPendingMap).containsKey(0);
+        verify(coreRpcService, never()).processRpcResponseFromDeviceActor(any());
+    }
+
+    @Test
+    public void nonPersistentRpcExpiredOnArrivalIsDroppedSilently() {
+        mockRpcInfra();
+        subscribeAsyncSession();
+
+        processor.processRpcRequest(mock(TbActorCtx.class), new ToDeviceRpcRequestActorMsg("svc",
+                nonPersistedRequest(UUID.randomUUID(), System.currentTimeMillis() - 1, false)));
+
+        // No row is written for a non-persistent RPC, and the caller gets no rpcId to read.
+        verify(toTransport, never()).process(any(), any());
+        verify(rpcService, never()).createIfAbsent(any(), any(), any());
+        verify(coreRpcService, never()).processRpcResponseFromDeviceActor(any());
+        assertThat(processor.toDeviceRpcPendingMap).isEmpty();
+    }
+
+    @Test
+    public void pendingNonPersistentRpcIsStillDeliveredOnSubscribe() {
+        mockRpcInfra();
+
+        // No session yet, so it is registered unsent.
+        processor.processRpcRequest(mock(TbActorCtx.class),
+                new ToDeviceRpcRequestActorMsg("svc", nonPersistedRequest(UUID.randomUUID())));
+        verify(toTransport, never()).process(any(), any());
+
+        // The durability filter added for persistent RPCs must not hold a non-persistent one back.
+        pushViaAsyncSession();
+        assertThat(publishedRequestIds()).containsExactly(0);
+    }
+
+    @Test
     public void persistsRequestIdOnCreate() {
         mockRpcInfra();
 
@@ -628,6 +700,15 @@ public class DeviceActorMessageProcessorTest {
     private ToDeviceRpcRequest persistedRequest(UUID rpcId, long expirationTime, boolean oneway) {
         return new ToDeviceRpcRequest(rpcId, tenantId, deviceId, oneway, expirationTime,
                 new ToDeviceRpcRequestBody("m", "{}"), true, null, null); // persisted=true
+    }
+
+    private ToDeviceRpcRequest nonPersistedRequest(UUID rpcId) {
+        return nonPersistedRequest(rpcId, System.currentTimeMillis() + 60_000, false);
+    }
+
+    private ToDeviceRpcRequest nonPersistedRequest(UUID rpcId, long expirationTime, boolean oneway) {
+        return new ToDeviceRpcRequest(rpcId, tenantId, deviceId, oneway, expirationTime,
+                new ToDeviceRpcRequestBody("m", "{}"), false, null, null); // persisted=false
     }
 
     private ToDeviceRpcRequest expiredRequest(UUID rpcId) {
