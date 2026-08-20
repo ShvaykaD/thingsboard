@@ -20,9 +20,6 @@ ALTER TABLE rpc ADD COLUMN IF NOT EXISTS request_id integer;
 
 ALTER TABLE rpc ADD COLUMN IF NOT EXISTS oneway boolean;
 
-CREATE INDEX IF NOT EXISTS idx_rpc_in_flight ON rpc (tenant_id, device_id)
-    WHERE status IN ('QUEUED','SENT','TIMEOUT') OR (status = 'DELIVERED' AND oneway = false);
-
 -- RPC REQUEST ID ADDITION END
 
 -- RPC CALL REQUEST NODE FORCE ACK START
