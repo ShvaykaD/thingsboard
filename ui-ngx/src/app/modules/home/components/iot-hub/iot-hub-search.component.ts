@@ -171,7 +171,11 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
 
   navigateToType(type: ItemType): void {
     const search = this.searchText?.trim() || undefined;
-    void this.router.navigate(['/iot-hub', this.getTypeRoute(type)], { queryParams: { search } });
+    // creatorId must survive the jump: on a creator profile this header means "more of THIS
+    // creator's widgets". Without it the user lands on the Hub-wide widgets page and the
+    // profile's scope silently disappears.
+    void this.router.navigate(['/iot-hub', this.getTypeRoute(type)],
+      { queryParams: { search, creatorId: this.creatorId || undefined } });
   }
 
   // Installed items
