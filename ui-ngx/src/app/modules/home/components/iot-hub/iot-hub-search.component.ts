@@ -30,6 +30,10 @@ import { IotHubActionsService } from './iot-hub-actions.service';
 interface SearchResultGroup {
   type: ItemType;
   items: MpItemVersionView[];
+  /** Rows of this type behind the answer, from the response's typeTotal. */
+  total: number;
+  /** total - items.length, floored at 0. Zero means the header shows no "+N more". */
+  remaining: number;
 }
 
 interface SortOption {
@@ -37,6 +41,10 @@ interface SortOption {
   label: string;
   direction: Direction;
 }
+
+/** Sort property served by relevance ranking. With an empty field the backend
+ *  substitutes it with install count, so it is a safe default for the panel. */
+const RELEVANCE = 'relevance';
 
 const TYPE_ORDER: ItemType[] = [
   ItemType.DEVICE, ItemType.SOLUTION_TEMPLATE, ItemType.WIDGET,
@@ -68,16 +76,22 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
   hasError = false;
   private retryTimer: any = null;
 
+  /** Not a user control any more: a grouped answer is one screen. The server ignores it on a
+   *  grouped request, and it is only what a stale, ungrouped backend would page by. */
   pageSize = 15;
-  pageIndex = 0;
-  pageSizeOptions = [15, 30, 60];
 
   sortOptions: SortOption[] = [
+    { value: RELEVANCE, label: 'iot-hub.sort-most-relevant', direction: Direction.DESC },
     { value: 'totalInstallCount', label: 'iot-hub.sort-most-installed', direction: Direction.DESC },
     { value: 'publishedTime', label: 'iot-hub.sort-newest', direction: Direction.DESC },
     { value: 'name', label: 'iot-hub.sort-name', direction: Direction.ASC }
   ];
   selectedSortIndex = 0;
+
+  /** Every surface this component serves is cross-type, so grouping is unconditional today.
+   *  Named rather than inlined so a future single-type host turns it off in one place, without
+   *  touching fetchResults. */
+  readonly grouped = true;
 
   installedWidgets: IotHubInstalledItem[] = [];
   installedSolutionTemplates: IotHubInstalledItem[] = [];
@@ -102,7 +116,6 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
       debounceTime(300),
       distinctUntilChanged()
     ).subscribe(() => {
-      this.pageIndex = 0;
       this.loadResults();
     });
     this.loadResults();
@@ -129,46 +142,6 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
 
   onSortChange(index: number): void {
     this.selectedSortIndex = index;
-    this.pageIndex = 0;
-    this.loadResults();
-  }
-
-  // Pagination
-  get totalPages(): number {
-    return Math.ceil(this.totalElements / this.pageSize) || 0;
-  }
-
-  getPageNumbers(): number[] {
-    const total = this.totalPages;
-    if (total <= 5) {
-      return Array.from({length: total}, (_, i) => i);
-    }
-    const pages: number[] = [];
-    const start = Math.max(0, this.pageIndex - 2);
-    const end = Math.min(total - 1, start + 4);
-    if (end - start < 4) {
-      const adjustedStart = Math.max(0, end - 4);
-      for (let i = adjustedStart; i <= end; i++) {
-        pages.push(i);
-      }
-    } else {
-      for (let i = start; i <= end; i++) {
-        pages.push(i);
-      }
-    }
-    return pages;
-  }
-
-  goToPage(page: number): void {
-    if (page >= 0 && page < this.totalPages) {
-      this.pageIndex = page;
-      this.loadResults();
-    }
-  }
-
-  onPageSizeChange(size: number): void {
-    this.pageSize = size;
-    this.pageIndex = 0;
     this.loadResults();
   }
 
@@ -302,10 +275,20 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
   }
 
   private fetchResults(text: string) {
+    const trimmed = text.trim();
     const sort = this.sortOptions[this.selectedSortIndex];
     const sortOrder: SortOrder = { property: sort.value, direction: sort.direction };
-    const pageLink = new PageLink(this.pageSize, this.pageIndex, text.trim() || null, sortOrder);
-    const query = new MpItemVersionQuery(pageLink, { creatorId: this.creatorId || undefined });
+    // A grouped answer is one screen, so page index and page size stop being the user's
+    // controls. PageLink still needs a page size, but on a grouped request the server IGNORES
+    // it: the answer's shape is the mode's, not the caller's - the top rows of every type, one
+    // screen, no second page. So pass a plain page size rather than inventing a constant for
+    // it; a number here would be a second source of truth about the response's shape and a
+    // thing to forget when a content type is added.
+    const pageLink = new PageLink(this.pageSize, 0, trimmed || null, sortOrder);
+    const query = new MpItemVersionQuery(pageLink, {
+      creatorId: this.creatorId || undefined,
+      grouped: this.grouped || undefined
+    });
     return this.iotHubApiService.getPublishedVersions(query, { ignoreLoading: true, ignoreErrors: true });
   }
 
@@ -327,7 +310,13 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
     }
     return TYPE_ORDER
       .filter(type => groupMap.has(type))
-      .map(type => ({ type, items: groupMap.get(type) }));
+      .map(type => {
+        const groupItems = groupMap.get(type);
+        // Every row of a type carries the same typeTotal. The fallback keeps a non-grouped
+        // response rendering correctly - which is what a stale backend would send.
+        const total = groupItems[0].typeTotal ?? groupItems.length;
+        return { type, items: groupItems, total, remaining: Math.max(0, total - groupItems.length) };
+      });
   }
 
   private loadInstalledItems(): void {

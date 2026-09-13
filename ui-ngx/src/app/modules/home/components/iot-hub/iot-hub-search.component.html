@@ -53,36 +53,11 @@
   </mat-menu>
 </div>
 
-<!-- Results count + Pagination (shown when results exist) -->
+<!-- Results count -->
 <div class="tb-search-pagination-row" [class.lt-md:!hidden]="totalElements === 0">
   <span class="tb-search-results-count">
     {{ 'iot-hub.results-count' | translate:{ count: totalElements } }}
   </span>
-  @if (totalElements > 0) {
-    <div class="tb-search-pagination">
-    <div class="flex items-center gap-px">
-      <button mat-icon-button [disabled]="pageIndex === 0" (click)="goToPage(pageIndex - 1)">
-        <mat-icon>chevron_left</mat-icon>
-      </button>
-      @for (p of getPageNumbers(); track p) {
-        <button class="tb-search-page-btn" [class.active]="p === pageIndex" (click)="goToPage(p)">
-          {{ p + 1 }}
-        </button>
-      }
-      <button mat-icon-button [disabled]="pageIndex >= totalPages - 1" (click)="goToPage(pageIndex + 1)">
-        <mat-icon>chevron_right</mat-icon>
-      </button>
-    </div>
-    <div class="tb-search-page-size">
-      <span>{{ 'iot-hub.items-per-page' | translate }}:</span>
-      <mat-select [value]="pageSize" (selectionChange)="onPageSizeChange($event.value)" class="tb-search-page-size-select">
-        @for (size of pageSizeOptions; track size) {
-          <mat-option [value]="size">{{ size }}</mat-option>
-        }
-      </mat-select>
-    </div>
-  </div>
-  }
 </div>
 
 <div class="tb-search-divider"></div>
@@ -119,6 +94,11 @@
             <!-- Section header -->
             <button mat-button class="tb-search-section-header" (click)="navigateToType(group.type)">
               {{ getTypeLabel(group.type) }}
+              @if (group.remaining > 0) {
+                <span class="tb-search-section-more">
+                  {{ 'iot-hub.section-more' | translate:{ count: group.remaining } }}
+                </span>
+              }
               <mat-icon>chevron_right</mat-icon>
             </button>
             <!-- Card grid -->

@@ -68,59 +68,6 @@
   white-space: nowrap;
 }
 
-.tb-search-pagination {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.tb-search-page-btn {
-  min-width: 40px;
-  height: 40px;
-  border: none;
-  background: none;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-  color: rgba(0, 0, 0, 0.87);
-  cursor: pointer;
-  padding: 8px 16px;
-  font-family: inherit;
-
-  &:hover {
-    background: rgba(0, 0, 0, 0.04);
-  }
-
-  &.active {
-    background: $tb-primary-color;
-    color: white;
-  }
-}
-
-.tb-search-page-size {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  letter-spacing: 0.2px;
-  color: rgba(0, 0, 0, 0.76);
-  margin-left: auto;
-}
-
-.tb-search-page-size-select {
-  width: 77px;
-  height: 40px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 4px;
-  padding: 6px 12px;
-
-  ::ng-deep .mat-mdc-select-trigger {
-    font-size: 14px;
-  }
-}
-
 // Empty state no-data-bg + text
 .tb-search-empty {
   .tb-no-data-bg, .tb-no-service-bg {
@@ -180,6 +127,14 @@
   }
 }
 
+.tb-search-section-more {
+  margin-left: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: rgba(0, 0, 0, 0.54);
+}
+
 // Card grid
 .tb-search-card-grid {
   display: grid;
@@ -224,22 +179,6 @@
 }
 
 @media #{$mat-lt-lg} {
-  .tb-search-pagination-row {
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 12px;
-  }
-
-  .tb-search-results-count {
-    order: 1;
-  }
-
-  .tb-search-pagination {
-    order: 0;
-    width: 100%;
-  }
-
   .tb-search-card-grid {
     grid-template-columns: repeat(2, 1fr);
 
@@ -270,15 +209,5 @@
 
   .tb-search-card-grid {
     grid-template-columns: repeat(1, 1fr);
-  }
-
-  .tb-search-pagination {
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .tb-search-page-size {
-    margin-left: 0;
   }
 }
