@@ -112,6 +112,8 @@ export interface MpItemVersionView {
   resources: MpItemVersionResource[];
   relatedItems?: string[];
   checksum?: string;
+  /** Rows of this item's type behind a grouped response. Absent on a flat page. */
+  typeTotal?: number;
 }
 
 // 404 body shapes returned by the public listing item-version endpoint
@@ -137,6 +139,13 @@ export interface MpItemVersionQueryOptions {
   connectivity?: string[];
   vendors?: string[];
   scadaFirst?: boolean;
+  /**
+   * Ask for the top four of each item type in one response instead of a flat page.
+   * Every row then carries `typeTotal`, the number of rows of its type behind the answer,
+   * which is what the section header's "+N more" counts. Grouped responses are one screen:
+   * the backend rejects a non-zero `page`.
+   */
+  grouped?: boolean;
 }
 
 export class MpItemVersionQuery {
@@ -183,6 +192,9 @@ export class MpItemVersionQuery {
     }
     if (o.scadaFirst != null) {
       query += `&scadaFirst=${o.scadaFirst}`;
+    }
+    if (o.grouped != null) {
+      query += `&grouped=${o.grouped}`;
     }
     return query;
   }
