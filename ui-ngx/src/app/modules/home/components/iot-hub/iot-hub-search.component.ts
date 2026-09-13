@@ -297,8 +297,16 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
   }
 
   private applyResults(data: MpItemVersionView[], totalElements: number): void {
-    this.totalElements = totalElements;
     this.resultGroups = this.groupResults(data);
+    // A grouped response's totalElements counts the rows it CARRIES - at most four per type, so
+    // at most SearchSections.MAX_ROWS (28) however many matched. Printing it as "N results" beside
+    // a section header reading "+312 more" would have the headline contradict the chips right
+    // under it, so the headline is the sum of one typeTotal per section, which is what the server
+    // documents (MpItemVersionView#typeTotal). With no matches the sum is 0 and the empty state
+    // still fires.
+    this.totalElements = this.grouped
+      ? this.resultGroups.reduce((sum, g) => sum + g.total, 0)
+      : totalElements;
     this.isLoading = false;
   }
 
