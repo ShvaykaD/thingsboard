@@ -213,8 +213,11 @@
   width: 232px;
   flex-shrink: 0;
   border-right: 1px solid rgba(0, 0, 0, 0.12);
-  padding-right: 8px;
 
+  // No horizontal padding here on purpose: the rules between facets are drawn on the facets
+  // themselves, and they have to reach this column's edges the way the type pages' do. The
+  // text is indented inside tb-iot-hub-facet-list instead.
+  align-self: stretch;
   height: 100%;
   overflow-y: auto;
   padding-top: 20px;
@@ -258,14 +261,12 @@
 .tb-search-facets {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   padding-bottom: 24px;
 
-  // The type pages put a rule between filter sections; a border on adjacent facets says the
-  // same thing without a divider element between every pair.
+  // The type pages put a rule between filter sections. No gap and no padding around it: the
+  // rule sits flush between two sections, edge to edge, rather than floating inside a gap.
   tb-iot-hub-facet-list + tb-iot-hub-facet-list {
     border-top: 1px solid rgba(0, 0, 0, 0.12);
-    padding-top: 8px;
   }
 }
 
