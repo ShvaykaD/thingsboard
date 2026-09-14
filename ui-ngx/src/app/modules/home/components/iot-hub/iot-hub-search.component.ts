@@ -62,8 +62,6 @@ const MIN_PAGE_SIZE = 12;
 })
 export class TbIotHubSearchComponent implements OnInit, OnDestroy {
 
-  readonly ItemType = ItemType;
-
   @Input() searchText = '';
   @Input() creatorId: string;
   @Input() showCreator = true;
