@@ -22,6 +22,14 @@
   flex-direction: column;
 }
 
+// The page hands this component the card's full width and its own side padding as a variable.
+// Rows that are ordinary content pad themselves back in; the divider and the filter rail are
+// the two things that are supposed to reach the edge, so they do not.
+.tb-search-pad {
+  padding-left: var(--tb-search-side-pad, 0px);
+  padding-right: var(--tb-search-side-pad, 0px);
+}
+
 .tb-search-results-count-mobile {
   display: none;
   margin-left: auto;
@@ -206,6 +214,8 @@
   .tb-results-container {
     flex: 1;
     min-width: 0;
+    // Only on the right: the gap to the rail already separates it on the left.
+    padding-right: var(--tb-search-side-pad, 0px);
   }
 }
 
@@ -214,17 +224,11 @@
   flex-shrink: 0;
   border-right: 1px solid rgba(0, 0, 0, 0.12);
 
-  // Pulled out past the page's own side padding so the column — and therefore every rule
-  // drawn across it — starts at the card's left edge, as the type pages' filter rail does.
-  // The width grows by the same amount, so the column's right border does not move.
-  //
-  // No padding here: padding insets everything the column contains, the rules included, which
-  // is the whole thing this margin exists to undo. The indent is published as a variable and
-  // applied INSIDE each facet instead, so text sits on the page's left margin while the rules
-  // still reach the edge.
-  margin-left: calc(-1 * var(--tb-search-side-pad, 0px));
-  width: calc(232px + var(--tb-search-side-pad, 0px));
-  --tb-facet-indent: calc(var(--tb-search-side-pad, 0px) + 16px);
+  // The component is already full-bleed, so this column starts at the card's edge with no
+  // margin of its own and every rule drawn across it reaches that edge. The indent goes INSIDE
+  // each facet — padding here would inset the rules too — and matches the page's own margin, so
+  // the words line up with the heading above them.
+  --tb-facet-indent: var(--tb-search-side-pad, 16px);
 
   align-self: stretch;
   height: 100%;
@@ -373,11 +377,9 @@
 
   .tb-search-facets-desktop {
     display: none;
-    // Back inside the page's padding: as a block above the results it is ordinary content,
-    // not a rail, so it has no edge to reach and no page margin to line up with.
-    margin-left: 0;
+    // As a block above the results it is ordinary content, not a rail, so it lines up with
+    // the rows above it rather than with the card's edge.
     width: 100%;
-    --tb-facet-indent: 16px;
     height: auto;
     max-height: 60vh;
     border-right: none;

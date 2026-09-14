@@ -15,7 +15,7 @@
     limitations under the License.
 
 -->
-<div class="mb-10 flex items-baseline gap-4 lt-md:mb-4">
+<div class="tb-search-pad mb-10 flex items-baseline gap-4 lt-md:mb-4">
   <ng-content></ng-content>
   <span class="tb-search-results-count tb-search-results-count-mobile">
     {{ 'iot-hub.results-count' | translate:{ count: totalElements } }}
@@ -25,7 +25,7 @@
 <div #cardGridProbe class="tb-search-card-grid tb-search-card-grid-probe" aria-hidden="true"></div>
 
 <!-- Filter + Search + Sort row -->
-<div class="flex items-center gap-4">
+<div class="tb-search-pad flex items-center gap-4">
   @if (showFilters) {
     <button mat-stroked-button class="tb-search-filter-btn" (click)="filtersOpen = !filtersOpen">
       <mat-icon>filter_alt</mat-icon>
@@ -66,7 +66,7 @@
 </div>
 
 <!-- Results count + Pagination (shown when results exist) -->
-<div class="tb-search-pagination-row" [class.lt-md:!hidden]="totalElements === 0">
+<div class="tb-search-pagination-row tb-search-pad" [class.lt-md:!hidden]="totalElements === 0">
   <span class="tb-search-results-count">
     {{ 'iot-hub.results-count' | translate:{ count: totalElements } }}
   </span>
