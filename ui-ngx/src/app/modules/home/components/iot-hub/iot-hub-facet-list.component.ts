@@ -50,6 +50,13 @@ export class TbIotHubFacetListComponent {
    */
   @Input() labelFor: (key: string) => string = (key) => key;
 
+  /**
+   * Open on first render. The host decides: a short, always-relevant facet earns the space it
+   * takes, a long one costs the reader the facets below it — on the search page all three
+   * headings fit above the fold only because two of them start closed.
+   */
+  @Input() expanded = true;
+
   @Output() toggled = new EventEmitter<string>();
 
   /**
