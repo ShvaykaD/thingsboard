@@ -101,7 +101,8 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
   }
 
   /** Filter panel state. Empty sets mean "no filter", which is what the query object expects. */
-  filterDrawerOpened = false;
+  /** Narrow widths only: the facet panel is a block above the results, not a sidebar. */
+  filtersOpen = false;
   typeOptions: FilterParamInfo[] = [];
   categoryOptions: FilterParamInfo[] = [];
   useCaseOptions: FilterParamInfo[] = [];

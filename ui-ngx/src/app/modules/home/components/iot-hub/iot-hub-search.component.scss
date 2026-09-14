@@ -192,20 +192,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-// Content: facet sidebar beside the grid, drawer instead of it when narrow
-.tb-search-content {
-  background: transparent;
-  overflow: visible;
-
-  ::ng-deep .mat-drawer-backdrop.mat-drawer-shown {
-    background: transparent;
-  }
-}
-
-.tb-search-results-area {
+// Content: facet sidebar beside the grid
+.tb-search-layout {
   display: flex;
   gap: 24px;
-  overflow: visible;
+  align-items: flex-start;
 
   .tb-results-container {
     flex: 1;
@@ -219,10 +210,8 @@
   border-right: 1px solid rgba(0, 0, 0, 0.12);
   padding-right: 8px;
 
-  // align-self keeps the column at its own height instead of stretching to the row's, and the
-  // cap plus its own scroll keep a long facet list from driving that height at all — without
-  // both, a use-case list taller than the grid pushes the sidebar past the page's background.
-  align-self: flex-start;
+  // Sticky so a long list follows the page, capped so it scrolls itself rather than running
+  // past the grid. It is a normal flex item, so it also keeps the row as tall as it is.
   position: sticky;
   top: 0;
   max-height: calc(100vh - var(--mat-toolbar-standard-height, 64px));
@@ -256,6 +245,14 @@
   }
 }
 
+// The close button and heading belong to the narrow layout only.
+.tb-search-facets-header {
+  display: none;
+  height: 48px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
 .tb-search-facets {
   display: flex;
   flex-direction: column;
@@ -265,19 +262,6 @@
 
 .tb-search-facets-clear {
   align-self: flex-start;
-}
-
-.tb-search-filter-drawer {
-  width: 300px;
-  max-width: 90vw;
-  padding: 0 16px;
-}
-
-.tb-search-filter-drawer-header {
-  height: 56px;
-  font-size: 16px;
-  font-weight: 500;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
 }
 
 // Responsive
@@ -360,14 +344,33 @@
   }
 }
 
-// The sidebar costs a whole card column, so below this width the facets move into the drawer.
+// The sidebar costs a whole card column, so below this width it stops being a column: the
+// panel collapses, and the Filter button opens it as a block above the results.
 @media #{$mat-lt-lg} {
+  .tb-search-layout {
+    flex-direction: column;
+  }
+
   .tb-search-facets-desktop {
     display: none;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+    padding-right: 0;
+    position: static;
+    max-height: none;
+
+    &.opened {
+      display: block;
+    }
+  }
+
+  .tb-search-facets-header {
+    display: flex;
   }
 }
 
-// ...and above it the drawer has no reason to be opened, so its trigger goes away.
+// Wide enough for the sidebar, so the button that opens the block has nothing to open.
 @media #{$mat-gt-md} {
   .tb-search-filter-btn {
     display: none;
