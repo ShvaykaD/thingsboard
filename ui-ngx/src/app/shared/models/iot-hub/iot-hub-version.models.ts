@@ -112,8 +112,12 @@ export interface MpItemVersionView {
   resources: MpItemVersionResource[];
   relatedItems?: string[];
   checksum?: string;
-  /** Rows of this item's type behind a grouped response. Absent on a flat page. */
-  typeTotal?: number;
+  /**
+   * Rows of this item's type behind a grouped response. A flat read does not omit it — the
+   * column is projected as NULL and serialised, so the field arrives as `null` there. Read it
+   * with `??`, never with a truthiness test.
+   */
+  typeTotal?: number | null;
 }
 
 // 404 body shapes returned by the public listing item-version endpoint
