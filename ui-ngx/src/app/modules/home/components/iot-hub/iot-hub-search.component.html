@@ -40,7 +40,7 @@
     }
   </div>
   <button mat-button color="primary" class="tb-search-sort-btn tb-search-sort-btn-full" [matMenuTriggerFor]="sortMenu">
-    {{ sortOptions[selectedSortIndex].label | translate }}
+    {{ sortOptions[effectiveSortIndex].label | translate }}
     <mat-icon iconPositionEnd>arrow_drop_down</mat-icon>
   </button>
   <button mat-icon-button color="primary" class="tb-search-sort-btn tb-search-sort-btn-icon" [matMenuTriggerFor]="sortMenu">
@@ -98,8 +98,8 @@
                 <span class="tb-search-section-more">
                   {{ 'iot-hub.section-more' | translate:{ count: group.remaining } }}
                 </span>
+                <mat-icon>chevron_right</mat-icon>
               }
-              <mat-icon>chevron_right</mat-icon>
             </button>
             <!-- Card grid -->
             <div class="tb-search-card-grid" [class.tb-search-card-grid-compact]="isCompactType(group.type)">

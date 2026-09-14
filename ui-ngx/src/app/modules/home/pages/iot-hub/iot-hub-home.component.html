@@ -101,12 +101,12 @@
                     (click)="navigateToSection(group.type)"
                     (keyup.enter)="navigateToSection(group.type)">
                 <span class="tb-search-popup-group-label">{{ getSearchGroupLabel(group.type) }}</span>
-                <span class="tb-search-popup-group-more">
-                  @if (group.remaining > 0) {
+                @if (group.remaining > 0) {
+                  <span class="tb-search-popup-group-more">
                     {{ 'iot-hub.section-more' | translate:{ count: group.remaining } }}
-                  }
-                  <mat-icon>chevron_right</mat-icon>
-                </span>
+                    <mat-icon>chevron_right</mat-icon>
+                  </span>
+                }
               </span>
               <ng-container>
                 @for (item of group.items; track item.id) {
