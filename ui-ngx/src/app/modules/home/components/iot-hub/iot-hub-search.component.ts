@@ -46,10 +46,6 @@ interface SortOption {
  *  substitutes it with install count, so it is a safe default for the panel. */
 const RELEVANCE = 'relevance';
 
-/** Index of the install-count option in sortOptions below - the default with an empty field. */
-const SORT_INDEX_MOST_INSTALLED = 1;
-/** Index of the relevance option, which a non-empty field implies until the user picks. */
-const SORT_INDEX_RELEVANCE = 0;
 
 const TYPE_ORDER: ItemType[] = [
   ItemType.DEVICE, ItemType.SOLUTION_TEMPLATE, ItemType.WIDGET,
@@ -91,12 +87,18 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
     { value: 'publishedTime', label: 'iot-hub.sort-newest', direction: Direction.DESC },
     { value: 'name', label: 'iot-hub.sort-name', direction: Direction.ASC }
   ];
-  /** What the user picked, or the default. Never what the search field implies - see
-   *  effectiveSortIndex. Starts on the install count: an empty field has nothing to be
-   *  relevant to, so landing here with no query shows the order it always showed. */
-  selectedSortIndex = SORT_INDEX_MOST_INSTALLED;
-  /** Set by the sort menu. Once the user has an opinion the field stops overriding it. */
-  private sortChosenByUser = false;
+  /**
+   * Relevance is the default in BOTH states, which is why nothing here switches on whether
+   * the search field has text. With text it ranks the answer; without it the backend
+   * substitutes the install count, so a user who never opens this menu sees the order they
+   * always saw while browsing and the best matches once they type.
+   *
+   * The alternative was to default to the install count and have the menu relabel itself while
+   * the field had text. Rejected: the label would change without anyone asking it to. The cost
+   * accepted instead is that with an empty field the button reads "Most relevant" over an
+   * install-ordered list, and picking "Most installed" there changes nothing visible.
+   */
+  selectedSortIndex = 0;
 
   /** Every surface this component serves is cross-type, so grouping is unconditional today.
    *  Named rather than inlined so a future single-type host turns it off in one place, without
@@ -152,23 +154,9 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
 
   onSortChange(index: number): void {
     this.selectedSortIndex = index;
-    this.sortChosenByUser = true;
     this.loadResults();
   }
 
-  /**
-   * The sort the request and the sort button must both use. A non-empty field implies relevance,
-   * because that is the only thing there is to rank by; an empty one has nothing to be relevant
-   * to, and the backend would substitute the install count anyway. Derived rather than stored, so
-   * clearing the field gives the user their own choice back instead of stranding them on a
-   * relevance sort with nothing to rank.
-   */
-  get effectiveSortIndex(): number {
-    if (this.sortChosenByUser || !this.searchText?.trim()) {
-      return this.selectedSortIndex;
-    }
-    return SORT_INDEX_RELEVANCE;
-  }
 
   // Type helpers
   isCompactType(type: ItemType): boolean {
@@ -305,7 +293,7 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
 
   private fetchResults(text: string) {
     const trimmed = text.trim();
-    const sort = this.sortOptions[this.effectiveSortIndex];
+    const sort = this.sortOptions[this.selectedSortIndex];
     const sortOrder: SortOrder = { property: sort.value, direction: sort.direction };
     // A grouped answer is one screen, so page index and page size stop being the user's
     // controls. PageLink still needs a page size, but on a grouped request the server IGNORES

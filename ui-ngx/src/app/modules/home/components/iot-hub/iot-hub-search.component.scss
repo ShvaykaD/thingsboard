@@ -128,11 +128,23 @@
 }
 
 .tb-search-section-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   margin-left: 8px;
   font-size: 14px;
   font-weight: 500;
   line-height: 20px;
   color: rgba(0, 0, 0, 0.54);
+
+  // The chevron sits inside the chip so the two appear together or not at all: a
+  // chevron on a section already showing everything points at nothing.
+  .mat-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+    line-height: 18px;
+  }
 }
 
 // Card grid

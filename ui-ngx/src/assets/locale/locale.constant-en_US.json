@@ -3707,7 +3707,7 @@
         "search-placeholder": "Search in IoT Hub...",
         "search": "Search...",
         "search-published-items": "Search published items...",
-        "see-most-installed": "See most installed",
+        "see-all-results": "See all results",
         "see-results-for": "See results for \"{{ search }}\"",
         "no-search-results": "No results found for '{{ search }}'",
         "no-items-available": "No items available",

@@ -40,7 +40,7 @@
     }
   </div>
   <button mat-button color="primary" class="tb-search-sort-btn tb-search-sort-btn-full" [matMenuTriggerFor]="sortMenu">
-    {{ sortOptions[effectiveSortIndex].label | translate }}
+    {{ sortOptions[selectedSortIndex].label | translate }}
     <mat-icon iconPositionEnd>arrow_drop_down</mat-icon>
   </button>
   <button mat-icon-button color="primary" class="tb-search-sort-btn tb-search-sort-btn-icon" [matMenuTriggerFor]="sortMenu">
@@ -95,10 +95,13 @@
             <button mat-button class="tb-search-section-header" (click)="navigateToType(group.type)">
               {{ getTypeLabel(group.type) }}
               @if (group.remaining > 0) {
+                <!-- One root node, and the chevron nested inside it: two roots here make
+                     MatButton try to project the icon into its own slot and fail (NG8011),
+                     and the icon then renders unpositioned. -->
                 <span class="tb-search-section-more">
                   {{ 'iot-hub.section-more' | translate:{ count: group.remaining } }}
+                  <mat-icon>chevron_right</mat-icon>
                 </span>
-                <mat-icon>chevron_right</mat-icon>
               }
             </button>
             <!-- Card grid -->
