@@ -163,6 +163,85 @@
   grid-template-columns: repeat(5, 1fr);
   gap: 20px;
 
+  // Probe: zero-height element used only to read the computed column count.
+  // Keeps display: grid and non-zero width so grid-template-columns resolves.
+  &.tb-search-card-grid-probe {
+    width: 100%;
+    height: 0;
+    gap: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+// Filter button — the drawer's trigger, and where the active count is shown
+.tb-search-filter-btn {
+  flex-shrink: 0;
+}
+
+.tb-search-filter-count {
+  margin-left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+// Content: facet sidebar beside the grid, drawer instead of it when narrow
+.tb-search-content {
+  background: transparent;
+  overflow: visible;
+
+  ::ng-deep .mat-drawer-backdrop.mat-drawer-shown {
+    background: transparent;
+  }
+}
+
+.tb-search-results-area {
+  display: flex;
+  gap: 24px;
+  overflow: visible;
+
+  .tb-results-container {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.tb-search-facets-desktop {
+  width: 232px;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(0, 0, 0, 0.12);
+  padding-right: 8px;
+}
+
+.tb-search-facets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 24px;
+}
+
+.tb-search-facets-clear {
+  align-self: flex-start;
+}
+
+.tb-search-filter-drawer {
+  width: 300px;
+  max-width: 90vw;
+  padding: 0 16px;
+}
+
+.tb-search-filter-drawer-header {
+  height: 56px;
+  font-size: 16px;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
 }
 
 // Responsive
@@ -242,5 +321,19 @@
 
   .tb-search-page-size {
     margin-left: 0;
+  }
+}
+
+// The sidebar costs a whole card column, so below this width the facets move into the drawer.
+@media #{$mat-lt-lg} {
+  .tb-search-facets-desktop {
+    display: none;
+  }
+}
+
+// ...and above it the drawer has no reason to be opened, so its trigger goes away.
+@media #{$mat-gt-md} {
+  .tb-search-filter-btn {
+    display: none;
   }
 }

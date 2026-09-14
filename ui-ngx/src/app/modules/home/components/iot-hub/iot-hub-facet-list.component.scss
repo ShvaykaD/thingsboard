@@ -1,0 +1,103 @@
+/**
+ * Copyright © 2016-2026 The Thingsboard Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@import "./iot-hub-common";
+
+// Values follow the type pages' filter panel so the two read as one control, minus its deep
+// left indent: that indent exists because the panel there sits in a wider rail.
+.tb-iot-hub-facet-panel.mat-expansion-panel {
+  box-shadow: none;
+  border-radius: 0;
+  background: transparent;
+
+  .mat-expansion-panel-header {
+    padding: 8px 8px 8px 0;
+    height: 40px;
+    min-height: 40px;
+  }
+
+  ::ng-deep .mat-expansion-panel-header-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.87);
+  }
+
+  ::ng-deep .mat-expansion-panel-body {
+    padding: 0 8px 0 0;
+  }
+
+  mat-checkbox {
+    display: block;
+    overflow: hidden;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.04);
+    }
+  }
+
+  .tb-iot-hub-facet-items {
+    // Uncapped until the list is long enough to need it, so a three-option facet does not
+    // reserve a scroll area it never uses.
+    &.scrollable {
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background-color: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background-color: transparent;
+      border-radius: 3px;
+    }
+
+    &:hover {
+      &::-webkit-scrollbar-track {
+        background-color: rgba(0, 0, 0, 0.04);
+      }
+
+      &::-webkit-scrollbar-thumb {
+        background-color: rgba(0, 0, 0, 0.2);
+
+        &:hover {
+          background-color: rgba(0, 0, 0, 0.35);
+        }
+      }
+    }
+  }
+
+  .tb-iot-hub-facet-search {
+    @include tb-iot-hub-search-container;
+    margin: 4px 8px 8px 0;
+
+    mat-icon {
+      @include tb-iot-hub-search-icon(rgba(0, 0, 0, 0.54));
+    }
+
+    input {
+      @include tb-iot-hub-search-input-text(0.2px);
+    }
+
+    .tb-iot-hub-facet-search-clear.mat-mdc-icon-button {
+      @include tb-iot-hub-search-clear;
+    }
+  }
+}
