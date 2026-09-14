@@ -22,19 +22,10 @@ import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { PageLink } from '@shared/models/page/page-link';
 import { Direction, SortOrder } from '@shared/models/page/sort-order';
 import { MpItemVersionQuery, MpItemVersionView } from '@shared/models/iot-hub/iot-hub-version.models';
-import { ItemType, itemTypeTranslations } from '@shared/models/iot-hub/iot-hub-item.models';
+import { ItemType } from '@shared/models/iot-hub/iot-hub-item.models';
 import { IotHubInstalledItem } from '@shared/models/iot-hub/iot-hub-installed-item.models';
 import { IotHubApiService } from '@core/http/iot-hub-api.service';
 import { IotHubActionsService } from './iot-hub-actions.service';
-
-interface SearchResultGroup {
-  type: ItemType;
-  items: MpItemVersionView[];
-  /** Rows of this type behind the answer, from the response's typeTotal. */
-  total: number;
-  /** total - items.length, floored at 0. Zero means the header shows no "+N more". */
-  remaining: number;
-}
 
 interface SortOption {
   value: string;
@@ -42,15 +33,9 @@ interface SortOption {
   direction: Direction;
 }
 
-/** Sort property served by relevance ranking. With an empty field the backend
- *  substitutes it with install count, so it is a safe default for the panel. */
+/** Sort property served by relevance ranking. With no text the backend substitutes the
+ *  install count, so it is a safe default in both states. */
 const RELEVANCE = 'relevance';
-
-
-const TYPE_ORDER: ItemType[] = [
-  ItemType.DEVICE, ItemType.SOLUTION_TEMPLATE, ItemType.WIDGET,
-  ItemType.CALCULATED_FIELD, ItemType.ALARM_RULE, ItemType.RULE_CHAIN
-];
 
 @Component({
   selector: 'tb-iot-hub-search',
@@ -71,15 +56,15 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
     return this.creatorId ? 'iot-hub.search-published-items' : 'iot-hub.search';
   }
 
-  resultGroups: SearchResultGroup[] = [];
+  results: MpItemVersionView[] = [];
   totalElements = 0;
   isLoading = false;
   hasError = false;
   private retryTimer: any = null;
 
-  /** Not a user control any more: a grouped answer is one screen. The server ignores it on a
-   *  grouped request, and it is only what a stale, ungrouped backend would page by. */
   pageSize = 15;
+  pageIndex = 0;
+  pageSizeOptions = [15, 30, 60];
 
   sortOptions: SortOption[] = [
     { value: RELEVANCE, label: 'iot-hub.sort-most-relevant', direction: Direction.DESC },
@@ -88,22 +73,12 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
     { value: 'name', label: 'iot-hub.sort-name', direction: Direction.ASC }
   ];
   /**
-   * Relevance is the default in BOTH states, which is why nothing here switches on whether
-   * the search field has text. With text it ranks the answer; without it the backend
-   * substitutes the install count, so a user who never opens this menu sees the order they
-   * always saw while browsing and the best matches once they type.
-   *
-   * The alternative was to default to the install count and have the menu relabel itself while
-   * the field had text. Rejected: the label would change without anyone asking it to. The cost
-   * accepted instead is that with an empty field the button reads "Most relevant" over an
-   * install-ordered list, and picking "Most installed" there changes nothing visible.
+   * Relevance is the default in BOTH states, which is why nothing here switches on whether the
+   * search field has text. With text it ranks the answer; without it the backend substitutes the
+   * install count, so a user who never opens this menu sees the order they always saw while
+   * browsing and the best matches once they type.
    */
   selectedSortIndex = 0;
-
-  /** Every surface this component serves is cross-type, so grouping is unconditional today.
-   *  Named rather than inlined so a future single-type host turns it off in one place, without
-   *  touching fetchResults. */
-  readonly grouped = true;
 
   installedWidgets: IotHubInstalledItem[] = [];
   installedSolutionTemplates: IotHubInstalledItem[] = [];
@@ -128,6 +103,7 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
       debounceTime(300),
       distinctUntilChanged()
     ).subscribe(() => {
+      this.pageIndex = 0;
       this.loadResults();
     });
     this.loadResults();
@@ -154,42 +130,53 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
 
   onSortChange(index: number): void {
     this.selectedSortIndex = index;
+    this.pageIndex = 0;
     this.loadResults();
   }
 
-
-  // Type helpers
-  isCompactType(type: ItemType): boolean {
-    return type === ItemType.CALCULATED_FIELD
-      || type === ItemType.ALARM_RULE
-      || type === ItemType.RULE_CHAIN;
+  // Pagination
+  get totalPages(): number {
+    return Math.ceil(this.totalElements / this.pageSize) || 0;
   }
 
-  getTypeLabel(type: ItemType): string {
-    const key = itemTypeTranslations.get(type);
-    return key ? this.translate.instant(key + '-plural') : type;
+  getPageNumbers(): number[] {
+    const total = this.totalPages;
+    if (total <= 5) {
+      return Array.from({length: total}, (_, i) => i);
+    }
+    const pages: number[] = [];
+    const start = Math.max(0, this.pageIndex - 2);
+    const end = Math.min(total - 1, start + 4);
+    if (end - start < 4) {
+      const adjustedStart = Math.max(0, end - 4);
+      for (let i = adjustedStart; i <= end; i++) {
+        pages.push(i);
+      }
+    } else {
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+    }
+    return pages;
   }
 
-  getTypeRoute(type: ItemType): string {
-    switch (type) {
-      case ItemType.WIDGET: return 'widgets';
-      case ItemType.SOLUTION_TEMPLATE: return 'solution-templates';
-      case ItemType.CALCULATED_FIELD: return 'calculated-fields';
-      case ItemType.ALARM_RULE: return 'alarm-rules';
-      case ItemType.RULE_CHAIN: return 'rule-chains';
-      case ItemType.DEVICE: return 'devices';
-      default: return 'widgets';
+  goToPage(page: number): void {
+    if (page >= 0 && page < this.totalPages) {
+      this.pageIndex = page;
+      this.loadResults();
     }
   }
 
-  navigateToType(type: ItemType): void {
-    const search = this.searchText?.trim() || undefined;
-    // creatorId must survive the jump: on a creator profile this header means "more of THIS
-    // creator's widgets". Without it the user lands on the Hub-wide widgets page and the
-    // profile's scope silently disappears.
-    void this.router.navigate(['/iot-hub', this.getTypeRoute(type)],
-      { queryParams: { search, creatorId: this.creatorId || undefined } });
+  onPageSizeChange(size: number): void {
+    this.pageSize = size;
+    this.pageIndex = 0;
+    this.loadResults();
   }
+
+  // Type helpers
+
+
+
 
   // Installed items
   getInstalledItem(item: MpItemVersionView): IotHubInstalledItem | undefined {
@@ -285,64 +272,26 @@ export class TbIotHubSearchComponent implements OnInit, OnDestroy {
       error: () => {
         this.isLoading = false;
         this.hasError = true;
-        this.resultGroups = [];
+        this.results = [];
         this.totalElements = 0;
       }
     });
   }
 
   private fetchResults(text: string) {
-    const trimmed = text.trim();
     const sort = this.sortOptions[this.selectedSortIndex];
     const sortOrder: SortOrder = { property: sort.value, direction: sort.direction };
-    // A grouped answer is one screen, so page index and page size stop being the user's
-    // controls. PageLink still needs a page size, but on a grouped request the server IGNORES
-    // it: the answer's shape is the mode's, not the caller's - the top rows of every type, one
-    // screen, no second page. So pass a plain page size rather than inventing a constant for
-    // it; a number here would be a second source of truth about the response's shape and a
-    // thing to forget when a content type is added.
-    const pageLink = new PageLink(this.pageSize, 0, trimmed || null, sortOrder);
-    const query = new MpItemVersionQuery(pageLink, {
-      creatorId: this.creatorId || undefined,
-      grouped: this.grouped || undefined
-    });
+    const pageLink = new PageLink(this.pageSize, this.pageIndex, text.trim() || null, sortOrder);
+    const query = new MpItemVersionQuery(pageLink, { creatorId: this.creatorId || undefined });
     return this.iotHubApiService.getPublishedVersions(query, { ignoreLoading: true, ignoreErrors: true });
   }
 
   private applyResults(data: MpItemVersionView[], totalElements: number): void {
-    this.resultGroups = this.groupResults(data);
-    // A grouped response's totalElements counts the rows it CARRIES - at most four per type, so
-    // at most SearchSections.MAX_ROWS (28) however many matched. Printing it as "N results" beside
-    // a section header reading "+312 more" would have the headline contradict the chips right
-    // under it, so the headline is the sum of one typeTotal per section, which is what the server
-    // documents (MpItemVersionView#typeTotal). With no matches the sum is 0 and the empty state
-    // still fires.
-    this.totalElements = this.grouped
-      ? this.resultGroups.reduce((sum, g) => sum + g.total, 0)
-      : totalElements;
+    this.totalElements = totalElements;
+    this.results = data;
     this.isLoading = false;
   }
 
-  private groupResults(items: MpItemVersionView[]): SearchResultGroup[] {
-    const groupMap = new Map<ItemType, MpItemVersionView[]>();
-    for (const item of items) {
-      let list = groupMap.get(item.type);
-      if (!list) {
-        list = [];
-        groupMap.set(item.type, list);
-      }
-      list.push(item);
-    }
-    return TYPE_ORDER
-      .filter(type => groupMap.has(type))
-      .map(type => {
-        const groupItems = groupMap.get(type);
-        // Every row of a type carries the same typeTotal. The fallback keeps a non-grouped
-        // response rendering correctly - which is what a stale backend would send.
-        const total = groupItems[0].typeTotal ?? groupItems.length;
-        return { type, items: groupItems, total, remaining: Math.max(0, total - groupItems.length) };
-      });
-  }
 
   private loadInstalledItems(): void {
     const config = { ignoreLoading: true };
