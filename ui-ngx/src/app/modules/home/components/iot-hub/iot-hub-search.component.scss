@@ -193,10 +193,15 @@
 }
 
 // Content: facet sidebar beside the grid
+// The page gives this component the viewport's remaining height and expects its body to scroll
+// inside, not to grow past the white card. So the row takes that height and BOTH columns scroll
+// themselves — the grid as it always did, the facets likewise. A facet list can then be any
+// length at all without reaching the page behind it.
 .tb-search-layout {
   display: flex;
   gap: 24px;
-  align-items: flex-start;
+  height: 100%;
+  min-height: 0;
 
   .tb-results-container {
     flex: 1;
@@ -210,12 +215,9 @@
   border-right: 1px solid rgba(0, 0, 0, 0.12);
   padding-right: 8px;
 
-  // Sticky so a long list follows the page, capped so it scrolls itself rather than running
-  // past the grid. It is a normal flex item, so it also keeps the row as tall as it is.
-  position: sticky;
-  top: 0;
-  max-height: calc(100vh - var(--mat-toolbar-standard-height, 64px));
+  height: 100%;
   overflow-y: auto;
+  padding-top: 20px;
 
   &::-webkit-scrollbar {
     width: 6px;
@@ -256,8 +258,15 @@
 .tb-search-facets {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   padding-bottom: 24px;
+
+  // The type pages put a rule between filter sections; a border on adjacent facets says the
+  // same thing without a divider element between every pair.
+  tb-iot-hub-facet-list + tb-iot-hub-facet-list {
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
+    padding-top: 8px;
+  }
 }
 
 .tb-search-facets-clear {
@@ -354,11 +363,11 @@
   .tb-search-facets-desktop {
     display: none;
     width: 100%;
+    height: auto;
+    max-height: 60vh;
     border-right: none;
     border-bottom: 1px solid rgba(0, 0, 0, 0.12);
     padding-right: 0;
-    position: static;
-    max-height: none;
 
     &.opened {
       display: block;
