@@ -47,6 +47,10 @@
 tb-iot-hub-search {
   flex: 1;
   min-height: 0;
+  // Published so the facet rail can cancel it and reach the card's left edge, which is where
+  // the type pages draw theirs. The divider and the results container below do the same thing
+  // with hand-written negative margins.
+  --tb-search-side-pad: 123px;
   padding-left: 123px;
   padding-right: 123px;
 
@@ -71,6 +75,7 @@ tb-iot-hub-search {
   }
 
   tb-iot-hub-search {
+    --tb-search-side-pad: 40px;
     padding-left: 40px;
     padding-right: 40px;
 
@@ -95,6 +100,7 @@ tb-iot-hub-search {
   }
 
   tb-iot-hub-search {
+    --tb-search-side-pad: 24px;
     padding-left: 24px;
     padding-right: 24px;
 
@@ -124,6 +130,7 @@ tb-iot-hub-search {
   }
 
   tb-iot-hub-search {
+    --tb-search-side-pad: 16px;
     padding-left: 16px;
     padding-right: 16px;
 

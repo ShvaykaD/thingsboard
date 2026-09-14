@@ -214,9 +214,13 @@
   flex-shrink: 0;
   border-right: 1px solid rgba(0, 0, 0, 0.12);
 
-  // No horizontal padding here on purpose: the rules between facets are drawn on the facets
-  // themselves, and they have to reach this column's edges the way the type pages' do. The
-  // text is indented inside tb-iot-hub-facet-list instead.
+  // Pulled out past the page's own side padding so the column — and therefore every rule
+  // drawn across it — starts at the card's left edge, as the type pages' filter rail does.
+  // The width grows by the same amount, so the column's right border does not move.
+  margin-left: calc(-1 * var(--tb-search-side-pad, 0px));
+  width: calc(232px + var(--tb-search-side-pad, 0px));
+  padding-left: 24px;
+
   align-self: stretch;
   height: 100%;
   overflow-y: auto;
@@ -363,7 +367,11 @@
 
   .tb-search-facets-desktop {
     display: none;
+    // Back inside the page's padding: as a block above the results it is ordinary content,
+    // not a rail, so it has no edge to reach.
+    margin-left: 0;
     width: 100%;
+    padding-left: 0;
     height: auto;
     max-height: 60vh;
     border-right: none;
