@@ -176,6 +176,7 @@
       <div class="tb-search-card-grid">
         @for (item of results; track item.id) {
           <tb-iot-hub-item-card
+            layout="preview"
             [item]="item"
             [installedItem]="getInstalledItem(item)"
             [installedItemsCount]="getInstalledItemsCount(item)"
