@@ -216,10 +216,13 @@
 
   // Pulled out past the page's own side padding so the column — and therefore every rule
   // drawn across it — starts at the card's left edge, as the type pages' filter rail does.
-  // The width grows by the same amount, so the column's right border does not move.
+  // The width grows by the same amount, so the column's right border does not move, and the
+  // padding puts the text back on the page's own left margin: the rules reach the edge, the
+  // words line up with the title above them. The facet's own 16px sits on top of that, which
+  // is the same relationship the type pages have between their hero and their rail.
   margin-left: calc(-1 * var(--tb-search-side-pad, 0px));
   width: calc(232px + var(--tb-search-side-pad, 0px));
-  padding-left: 24px;
+  padding-left: var(--tb-search-side-pad, 0px);
 
   align-self: stretch;
   height: 100%;
