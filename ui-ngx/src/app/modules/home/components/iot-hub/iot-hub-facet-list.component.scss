@@ -24,9 +24,10 @@
   background: transparent;
 
   // Indented from the column's edges, because the rules between facets are not: they span the
-  // whole column, as they do on the type pages.
+  // whole column, as they do on the type pages. The host sets --tb-facet-indent to whatever
+  // puts this text on the page's own left margin.
   .mat-expansion-panel-header {
-    padding: 8px 16px;
+    padding: 8px 16px 8px var(--tb-facet-indent, 16px);
     height: 48px;
     min-height: 48px;
   }
@@ -38,7 +39,7 @@
   }
 
   ::ng-deep .mat-expansion-panel-body {
-    padding: 0 8px 8px 16px;
+    padding: 0 8px 8px var(--tb-facet-indent, 16px);
   }
 
   mat-checkbox {

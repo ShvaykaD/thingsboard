@@ -216,13 +216,15 @@
 
   // Pulled out past the page's own side padding so the column — and therefore every rule
   // drawn across it — starts at the card's left edge, as the type pages' filter rail does.
-  // The width grows by the same amount, so the column's right border does not move, and the
-  // padding puts the text back on the page's own left margin: the rules reach the edge, the
-  // words line up with the title above them. The facet's own 16px sits on top of that, which
-  // is the same relationship the type pages have between their hero and their rail.
+  // The width grows by the same amount, so the column's right border does not move.
+  //
+  // No padding here: padding insets everything the column contains, the rules included, which
+  // is the whole thing this margin exists to undo. The indent is published as a variable and
+  // applied INSIDE each facet instead, so text sits on the page's left margin while the rules
+  // still reach the edge.
   margin-left: calc(-1 * var(--tb-search-side-pad, 0px));
   width: calc(232px + var(--tb-search-side-pad, 0px));
-  padding-left: var(--tb-search-side-pad, 0px);
+  --tb-facet-indent: calc(var(--tb-search-side-pad, 0px) + 16px);
 
   align-self: stretch;
   height: 100%;
@@ -279,6 +281,7 @@
 
 .tb-search-facets-clear {
   align-self: flex-start;
+  margin-left: calc(var(--tb-facet-indent, 16px) - 16px);
 }
 
 // Responsive
@@ -371,10 +374,10 @@
   .tb-search-facets-desktop {
     display: none;
     // Back inside the page's padding: as a block above the results it is ordinary content,
-    // not a rail, so it has no edge to reach.
+    // not a rail, so it has no edge to reach and no page margin to line up with.
     margin-left: 0;
     width: 100%;
-    padding-left: 0;
+    --tb-facet-indent: 16px;
     height: auto;
     max-height: 60vh;
     border-right: none;
